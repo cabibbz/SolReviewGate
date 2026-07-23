@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.1
+
+Released July 23, 2026.
+
+* Migrates recognized legacy `/sol` command files after the new personal skill is installed
+* Removes the recognized legacy client shim and payload so two implementations cannot compete
+* Leaves unrelated command files untouched unless all legacy Sol Review markers match
+
 ## 3.0.0
 
 Released July 23, 2026.

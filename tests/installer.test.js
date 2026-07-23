@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { createServer } = require("node:http");
-const { mkdtemp, readFile } = require("node:fs/promises");
+const { access, mkdir, mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
@@ -22,10 +22,21 @@ test("Windows installer verifies the token and installs the client plus personal
   const root = await mkdtemp(path.join(os.tmpdir(), "solreviewinstallertest"));
   const installRoot = path.join(root, "install");
   const skillsRoot = path.join(root, "skills");
+  const claudeRoot = path.dirname(skillsRoot);
+  const legacyCommand = path.join(claudeRoot, "commands", "sol.md");
+  const legacyClientRoot = path.join(installRoot, "remote-client");
+  const legacyShim = path.join(installRoot, "bin", "sol-review.cmd");
   const address = server.address();
   const url = `http://127.0.0.1:${address.port}`;
 
   try {
+    await mkdir(path.dirname(legacyCommand), { recursive: true });
+    await mkdir(legacyClientRoot, { recursive: true });
+    await mkdir(path.dirname(legacyShim), { recursive: true });
+    await writeFile(legacyCommand, "SOL REVIEW PACKET\nsol-review\nBob Regress\n");
+    await writeFile(path.join(legacyClientRoot, "sol-review.js"), "legacy");
+    await writeFile(legacyShim, "remote-client\\sol-review.js");
+
     const result = await new Promise((resolve, reject) => {
       const child = spawn("powershell.exe", [
         "-NoProfile",
@@ -55,6 +66,10 @@ test("Windows installer verifies the token and installs the client plus personal
     assert.match(await readFile(path.join(installRoot, "client", "solreview.js"), "utf8"), /const TERMINAL/);
     assert.match(await readFile(path.join(installRoot, "bin", "solreview.cmd"), "utf8"), /solreview\.js/);
     assert.deepEqual(JSON.parse((await readFile(path.join(installRoot, "remote.json"), "utf8")).replace(/^\uFEFF/, "")), { url, token });
+    await assert.rejects(access(legacyCommand));
+    await assert.rejects(access(legacyClientRoot));
+    await assert.rejects(access(legacyShim));
+    assert.match(result.stdout, /previous Sol Review command was migrated/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

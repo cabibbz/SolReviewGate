@@ -10,7 +10,7 @@ param(
   [switch]$SkipVerify
 )
 
-$ReleaseVersion = "3.0.0"
+$ReleaseVersion = "3.0.1"
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
@@ -105,7 +105,9 @@ if (-not $SkipVerify) {
 $ClientRoot = Join-Path $InstallRoot "client"
 $BinRoot = Join-Path $InstallRoot "bin"
 $SkillRoot = Join-Path $ClaudeSkillsRoot "sol"
+$ClaudeRoot = Split-Path -Parent $ClaudeSkillsRoot
 $staging = Join-Path ([IO.Path]::GetTempPath()) "solreviewinstaller$([Guid]::NewGuid().ToString('N'))"
+$migrated = $false
 
 Write-Step 3 "Installing the client and personal skill"
 try {
@@ -142,6 +144,29 @@ try {
       $env:Path = "$env:Path;$BinRoot"
     }
   }
+
+  $legacyCommand = Join-Path $ClaudeRoot "commands\sol.md"
+  if (Test-Path -LiteralPath $legacyCommand) {
+    $legacyCommandText = Get-Content -LiteralPath $legacyCommand -Raw
+    if ($legacyCommandText -match "SOL REVIEW PACKET" -and $legacyCommandText -match "sol-review" -and $legacyCommandText -match "Bob Regress") {
+      Remove-Item -LiteralPath $legacyCommand -Force
+      $migrated = $true
+    }
+  }
+
+  $legacyShim = Join-Path $BinRoot "sol-review.cmd"
+  $legacyClientRoot = [IO.Path]::GetFullPath((Join-Path $InstallRoot "remote-client"))
+  $resolvedInstallRoot = [IO.Path]::GetFullPath($InstallRoot).TrimEnd("\") + "\"
+  if (Test-Path -LiteralPath $legacyShim) {
+    $legacyShimText = Get-Content -LiteralPath $legacyShim -Raw
+    if ($legacyShimText -match "remote-client" -and $legacyShimText -match "sol-review\.js") {
+      Remove-Item -LiteralPath $legacyShim -Force
+      if ($legacyClientRoot.StartsWith($resolvedInstallRoot, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $legacyClientRoot)) {
+        Remove-Item -LiteralPath $legacyClientRoot -Recurse -Force
+      }
+      $migrated = $true
+    }
+  }
 } finally {
   if (Test-Path -LiteralPath $staging) {
     Remove-Item -LiteralPath $staging -Recurse -Force
@@ -151,6 +176,9 @@ try {
 Write-Step 4 "Finishing setup"
 Write-Host ""
 Write-Host "Installation complete." -ForegroundColor Green
+if ($migrated) {
+  Write-Host "A previous Sol Review command was migrated to the personal skill." -ForegroundColor Green
+}
 Write-Host "Restart Claude Code, then run /sol in any existing or new session."
 Write-Host "The client credential is stored outside the project at $InstallRoot."
 Write-Host "No packet or configuration file was added to a Claude project."

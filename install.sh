@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-release_version="3.0.0"
+release_version="3.0.1"
 url="${SOL_GATE_URL:-}"
 repository_root="${SOL_REPOSITORY_ROOT:-https://raw.githubusercontent.com/cabibbz/SolReviewGate/v$release_version}"
 install_root="${SOL_INSTALL_ROOT:-$HOME/.sol-review}"
@@ -87,6 +87,23 @@ exec node "$client_root/solreview.js" "\$@"
 EOF
 chmod 700 "$bin_root/solreview"
 
+claude_root="$(dirname "$skills_root")"
+legacy_command="$claude_root/commands/sol.md"
+legacy_shim="$bin_root/sol-review"
+legacy_client="$install_root/remote-client"
+migrated="false"
+if [ -f "$legacy_command" ] && grep -q "SOL REVIEW PACKET" "$legacy_command" && grep -q "sol-review" "$legacy_command" && grep -q "Bob Regress" "$legacy_command"; then
+  rm -f "$legacy_command"
+  migrated="true"
+fi
+if [ -f "$legacy_shim" ] && grep -q "remote-client" "$legacy_shim" && grep -q "sol-review.js" "$legacy_shim"; then
+  rm -f "$legacy_shim"
+  if [ "$legacy_client" = "$install_root/remote-client" ] && [ -d "$legacy_client" ]; then
+    rm -rf "$legacy_client"
+  fi
+  migrated="true"
+fi
+
 case ":$PATH:" in
   *":$bin_root:"*) ;;
   *)
@@ -95,5 +112,8 @@ case ":$PATH:" in
 esac
 
 printf "\nInstallation complete.\n"
+if [ "$migrated" = "true" ]; then
+  printf "A previous Sol Review command was migrated to the personal skill.\n"
+fi
 printf "Restart your shell and Claude Code, then run /sol in any existing or new session.\n"
 printf "No packet or configuration file was added to a Claude project.\n"

@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Independent phone approved Codex review for Claude Code decisions",
-    "version": "3.0.0"
+    "version": "3.0.1"
   },
   "plugins": [
     {
       "name": "solreview",
       "source": "./plugins/solreview",
       "description": "Transfers the complete visible decision context to a phone approved Codex review gate",
-      "version": "3.0.0",
+      "version": "3.0.1",
       "category": "development",
       "tags": [
         "review",
