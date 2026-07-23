@@ -31,7 +31,9 @@ Challenges expire and are single use. Pairing is blocked after the first phone c
 
 Client tokens are random bearer credentials. The server stores only their SHA 256 hashes. A token can submit and poll only through a per job capability returned at job creation. It cannot approve a packet or read the admin API.
 
-Treat a client token as sensitive. Create a separate token per machine. The phone displays a new token once.
+Treat a client token as sensitive. Create a separate named token per machine. The phone displays a new token once, records recent use, and can revoke that token independently.
+
+The read only `/demo` route uses hard coded sample data and calls no private API. Public visitors to an already paired root PWA are directed to that demo and cannot register clients.
 
 ## Stored Data
 
@@ -68,6 +70,7 @@ This design intentionally favors a false block over a partial release.
 5. Vercel, Upstash, OpenAI, GitHub, and the local operating system remain trusted infrastructure.
 6. The PWA is designed for one paired administrator per deployment, not multiuser organizational access.
 7. Observable reasoning summaries are not private chain of thought.
+8. A public multi tenant service needs real user authentication, tenant namespacing, billing boundaries, and one Codex authorization per tenant. This repository does not claim those controls.
 
 For stronger separation, host the server source in an account or environment that Claude Code cannot access, keep Claude projects outside the client configuration directory, use distinct client tokens, and restrict Claude Code permissions.
 

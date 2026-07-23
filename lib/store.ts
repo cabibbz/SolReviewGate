@@ -14,6 +14,8 @@ export interface Store {
   addRecent(id: string, score: number): Promise<void>;
   removeRecent(id: string): Promise<void>;
   recentIds(limit: number): Promise<string[]>;
+  addClientIndex(id: string, score: number): Promise<void>;
+  clientIds(limit: number): Promise<string[]>;
 }
 
 interface MemoryEntry {
@@ -25,6 +27,7 @@ class MemoryStore implements Store {
   private values = new Map<string, MemoryEntry>();
   private pending = new Map<string, number>();
   private recent = new Map<string, number>();
+  private clients = new Map<string, number>();
 
   private active(key: string): MemoryEntry | null {
     const entry = this.values.get(key);
@@ -90,6 +93,17 @@ class MemoryStore implements Store {
       .slice(0, limit)
       .map(([id]) => id);
   }
+
+  async addClientIndex(id: string, score: number): Promise<void> {
+    this.clients.set(id, score);
+  }
+
+  async clientIds(limit: number): Promise<string[]> {
+    return [...this.clients.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([id]) => id);
+  }
 }
 
 class RedisStore implements Store {
@@ -151,6 +165,14 @@ class RedisStore implements Store {
 
   async recentIds(limit: number): Promise<string[]> {
     return this.redis.zrange<string[]>("sol:recent", 0, Math.max(0, limit - 1), { rev: true });
+  }
+
+  async addClientIndex(id: string, score: number): Promise<void> {
+    await this.redis.zadd("sol:clients", { score, member: id });
+  }
+
+  async clientIds(limit: number): Promise<string[]> {
+    return this.redis.zrange<string[]>("sol:clients", 0, Math.max(0, limit - 1), { rev: true });
   }
 }
 

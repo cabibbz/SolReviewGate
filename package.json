@@ -14,6 +14,7 @@
     "test:e2e": "node tests/e2e/run.mjs",
     "config:init": "node scripts/init-config.mjs",
     "icons:generate": "node scripts/generate-icons.mjs",
+    "release:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1",
     "plugin:validate": "claude plugin validate . --strict",
     "verify": "npm run lint && npm run typecheck && npm test && npm run build"
   },
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19.1.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.5.0",
+    "picomatch": "^4.0.5",
     "sharp": "^0.35.3",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"

@@ -49,6 +49,8 @@ test("Windows installer verifies the token and installs the client plus personal
     assert.equal(result.code, 0, result.stderr);
     assert.equal(verified, true);
     assert.doesNotMatch(`${result.stdout}${result.stderr}`, new RegExp(token));
+    assert.match(result.stdout, /The PWA accepted this client token/);
+    assert.match(result.stdout, /No packet or configuration file was added to a Claude project/);
     assert.match(await readFile(path.join(skillsRoot, "sol", "SKILL.md"), "utf8"), /name: sol/);
     assert.match(await readFile(path.join(installRoot, "client", "solreview.js"), "utf8"), /const TERMINAL/);
     assert.match(await readFile(path.join(installRoot, "bin", "solreview.cmd"), "utf8"), /solreview\.js/);

@@ -7,6 +7,7 @@ import {
   adminJobEvents,
   adminLiveLog,
   adminRawOutput,
+  authenticateClient,
   appendJobEvents,
   clientResult,
   commitJob,
@@ -15,10 +16,12 @@ import {
   getAuthorizedJob,
   getRetentionDays,
   JobError,
+  listClients,
   listRecentJobs,
   readPacket,
   registerClient,
   rejectJob,
+  revokeClient,
   saveLiveLog,
   saveTerminalResult,
   setRetentionDays,
@@ -33,6 +36,29 @@ function packetData(packet: string) {
   const compressed = gzipSync(raw);
   return { raw, compressed, packetHash: sha256(raw), compressedHash: sha256(compressed) };
 }
+
+test("registers, lists, uses, and revokes named clients independently", async () => {
+  resetMemoryStoreForTests();
+  const store = getStore();
+  const first = await registerClient("Alice laptop", store);
+  const second = await registerClient("Bob desktop", store);
+
+  assert.deepEqual((await listClients(store)).map((client) => client.name).sort(), ["Alice laptop", "Bob desktop"]);
+  assert.equal((await authenticateClient(first.token, store))?.name, "Alice laptop");
+  assert.ok((await listClients(store)).find((client) => client.id === first.client.id)?.lastUsedAt);
+
+  assert.ok(await revokeClient(first.client.id, store));
+  assert.equal(await authenticateClient(first.token, store), null);
+  assert.equal((await authenticateClient(second.token, store))?.name, "Bob desktop");
+  assert.ok((await listClients(store)).find((client) => client.id === first.client.id)?.revokedAt);
+});
+
+test("keeps concurrent client registrations in the client index", async () => {
+  resetMemoryStoreForTests();
+  const store = getStore();
+  await Promise.all(Array.from({ length: 20 }, (_, index) => registerClient(`Computer ${index + 1}`, store)));
+  assert.equal((await listClients(store)).length, 20);
+});
 
 test.beforeEach(() => resetMemoryStoreForTests());
 

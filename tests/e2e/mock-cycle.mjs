@@ -112,6 +112,18 @@ const rejectedClient = await fetch(`${baseUrl}/api/client/verify`, { headers: { 
 assert.equal(rejectedClient.status, 401);
 step("client installer verification checked");
 
+const secondEnrollment = await signedFetch("/api/admin/clients", { method: "POST", body: JSON.stringify({ name: "E2E second computer" }) });
+assert.equal(secondEnrollment.response.status, 200);
+const clientList = await signedFetch("/api/admin/clients");
+assert.equal(clientList.response.status, 200);
+assert.equal(clientList.body.clients.length, 2);
+const secondClientId = secondEnrollment.body.clientId;
+assert.equal((await signedFetch(`/api/admin/clients/${secondClientId}`, { method: "DELETE" })).response.status, 200);
+const revokedClient = await fetch(`${baseUrl}/api/client/verify`, { headers: { authorization: `Bearer ${secondEnrollment.body.token}` } });
+assert.equal(revokedClient.status, 401);
+assert.equal((await fetch(`${baseUrl}/api/client/verify`, { headers: { authorization: `Bearer ${enrollment.body.token}` } })).status, 200);
+step("named clients isolated and revocable");
+
 const packet = "# SOL REVIEW PACKET\n\n## User Request\nVerify the complete remote cycle.\n\n## Source Manifest\nS1 | E2E fixture\n";
 const firstClient = await runClient(enrollment.body.token, packet);
 const firstJob = await waitForJob();

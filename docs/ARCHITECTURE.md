@@ -7,6 +7,7 @@
 | Claude Code skill | Untrusted packet author | Freezes the decision and transfers visible context with source IDs |
 | Local client | Narrow transport | Compresses, hashes, chunks, uploads, polls, validates, and prints one final output |
 | Phone PWA | Operator control plane | Pairs, signs privileged requests, previews packets, approves runs, and displays private diagnostics |
+| Public demo | Untrusted read only UI | Presents hard coded sample records without calling private APIs |
 | Next.js server | Gate and coordinator | Authenticates clients, encrypts storage, controls job transitions, starts Sandboxes, and gates output |
 | Upstash Redis | Encrypted durable store | Holds phone credential metadata, client records, jobs, packet chunks, events, and retained results |
 | Vercel Sandbox | Isolated model runner | Hosts Codex authentication and one fresh review execution |
@@ -26,6 +27,8 @@
 10. Observable Codex events are normalized for Live view and retained exactly for Raw view.
 11. The worker and server classify the final response.
 12. A complete accepted review is rendered for Claude. Every other terminal path releases only the fixed terminal response.
+
+Named clients use independent token hashes and an atomic Redis index. Revoking one client does not invalidate any other client or the paired phone.
 
 ## State Machine
 

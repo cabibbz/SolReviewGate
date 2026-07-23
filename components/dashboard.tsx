@@ -105,6 +105,14 @@ interface CodexLogin {
   expiresAt?: number;
 }
 
+interface ClaudeClient {
+  id: string;
+  name: string;
+  createdAt: number;
+  lastUsedAt?: number;
+  revokedAt?: number;
+}
+
 const DB_NAME = "sol-gate-device";
 const STORE_NAME = "credentials";
 const terminalStates = new Set(["COMPLETE_REVIEW", "COMPLETE_OPAQUE", "REJECTED", "EXPIRED"]);
@@ -344,9 +352,13 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
   const [stateFilter, setStateFilter] = useState("ALL");
   const [storage, setStorage] = useState<StorageSummary | null>(null);
   const [codexLogin, setCodexLogin] = useState<CodexLogin | null>(null);
+  const [clients, setClients] = useState<ClaudeClient[]>([]);
+  const [clientsOpen, setClientsOpen] = useState(false);
+  const [clientName, setClientName] = useState("");
   const [clientToken, setClientToken] = useState("");
   const [busy, setBusy] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [clientRevokeConfirm, setClientRevokeConfirm] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [online, setOnline] = useState(true);
   const [jobsLoaded, setJobsLoaded] = useState(false);
@@ -386,6 +398,17 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
       setError(cause instanceof Error ? cause.message : "Could not load storage.");
     } finally {
       setStorageLoaded(true);
+    }
+  }, [hasDeviceKey]);
+
+  const loadClients = useCallback(async () => {
+    if (!hasDeviceKey) return;
+    try {
+      const response = await signedFetch("/api/admin/clients");
+      if (!response.ok) throw new Error("Claude clients are unavailable.");
+      setClients(((await response.json()) as { clients: ClaudeClient[] }).clients);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load Claude clients.");
     }
   }, [hasDeviceKey]);
 
@@ -431,10 +454,10 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
 
   useEffect(() => {
     if (!hasDeviceKey) return;
-    void Promise.all([loadJobs(), loadStorage()]);
+    void Promise.all([loadJobs(), loadStorage(), loadClients()]);
     const timer = window.setInterval(() => void loadJobs(), 8_000);
     return () => window.clearInterval(timer);
-  }, [hasDeviceKey, loadJobs, loadStorage]);
+  }, [hasDeviceKey, loadClients, loadJobs, loadStorage]);
 
   useEffect(() => {
     if (!selectedId || !hasDeviceKey) return;
@@ -561,11 +584,29 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
   const addClient = async () => {
     setBusy("client"); setError("");
     try {
-      const response = await signedFetch("/api/admin/clients", { method: "POST", body: JSON.stringify({ name: "Claude Code" }) });
+      const response = await signedFetch("/api/admin/clients", { method: "POST", body: JSON.stringify({ name: clientName.trim() || "Claude Code" }) });
       if (!response.ok) throw new Error("Client enrollment failed.");
       setClientToken(((await response.json()) as { token: string }).token);
+      setClientName("");
+      await loadClients();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Client enrollment failed.");
+    } finally { setBusy(""); }
+  };
+
+  const revokeClaudeClient = async (id: string) => {
+    if (clientRevokeConfirm !== id) {
+      setClientRevokeConfirm(id);
+      return;
+    }
+    setBusy(`client:${id}`); setError("");
+    try {
+      const response = await signedFetch(`/api/admin/clients/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Client revocation failed.");
+      setClientRevokeConfirm(null);
+      await loadClients();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Client revocation failed.");
     } finally { setBusy(""); }
   };
 
@@ -590,11 +631,11 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
   const unclassifiedRuns = Math.max(0, completedRuns.length - releasedRuns - modelWithheldRuns - wrapperBlockedRuns - systemFailureRuns);
   const releaseRate = completedRuns.length ? Math.round((releasedRuns / completedRuns.length) * 100) : 0;
   const protocolVersions = [...new Set(completedRuns.map((job) => job.protocolVersion).filter(Boolean))];
-  const windowsInstaller = `$env:SOL_GATE_URL='${serviceOrigin}'; irm 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/install.ps1' | iex`;
+  const windowsInstaller = `$env:SOL_GATE_URL='${serviceOrigin}'; irm 'https://github.com/cabibbz/SolReviewGate/releases/latest/download/SolReviewSetup.ps1' | iex`;
 
   if (!health) return <main className="empty"><LoaderCircle className="spin" aria-label="Loading" /></main>;
 
-  if (health.paired && !hasDeviceKey) return <main className="content setup"><section className="panel"><div className="panel-body"><h1 className="setup-title"><TriangleAlert size={22} /> Paired in another browser</h1><p className="section-copy">Open the original paired PWA. This browser does not hold the non-exportable approval key.</p><button className="btn" type="button" onClick={() => void loadHealth()}><RefreshCw size={16} /> Check again</button></div></section></main>;
+  if (health.paired && !hasDeviceKey) return <main className="content setup"><section className="panel"><div className="panel-body"><Image className="setup-logo" src="/brandmark.png" alt="" width={64} height={64} priority /><h1 className="setup-title"><TriangleAlert size={22} /> Private PWA</h1><p className="section-copy">This deployment is already paired to its owner. Public visitors cannot access its Codex connection, reviews, or client registration.</p><div className="toolbar"><a className="btn primary" href="/demo"><Activity size={16} /> Open safe demo</a><a className="btn" href="https://github.com/cabibbz/SolReviewGate/blob/main/docs/DEPLOYMENT.md" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Deploy your own</a><button className="btn icon" type="button" onClick={() => void loadHealth()} title="Check again" aria-label="Check again"><RefreshCw size={16} /></button></div></div></section></main>;
 
   if (!health.paired || !hasDeviceKey) return <main className="content setup"><section className="panel"><div className="panel-body"><Image className="setup-logo" src="/brandmark.png" alt="" width={64} height={64} priority /><h1 className="setup-title"><LockKeyhole size={22} /> Pair this phone</h1><p className="section-copy">Add Sol Gate to the Home Screen first, open the installed app, then enter the bootstrap secret.</p><div className="field"><label htmlFor="bootstrap">Bootstrap secret</label><input id="bootstrap" type="password" autoComplete="off" autoCapitalize="none" spellCheck={false} value={bootstrapSecret} onChange={(event) => setBootstrapSecret(event.target.value)} /></div>{error && <p className="notice error">{error}</p>}<button className="btn primary" type="button" disabled={!bootstrapSecret || busy === "pair"} onClick={() => void pair()}>{busy === "pair" ? <LoaderCircle className="spin" size={16} /> : <KeyRound size={16} />} Pair phone</button></div></section></main>;
 
@@ -613,21 +654,25 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
       </section>
 
       <div className="toolbar dashboard-actions">
-        <button className="btn icon" type="button" onClick={() => void Promise.all([loadJobs(), loadStorage(), selectedId ? loadDetail(selectedId) : Promise.resolve()])} title="Refresh" aria-label="Refresh"><RefreshCw size={16} /></button>
+        <button className="btn icon" type="button" onClick={() => void Promise.all([loadJobs(), loadStorage(), loadClients(), selectedId ? loadDetail(selectedId) : Promise.resolve()])} title="Refresh" aria-label="Refresh"><RefreshCw size={16} /></button>
         {!health.codexConnected && codexLogin?.state !== "running" && codexLogin?.state !== "finalizing" && <button className="btn primary" type="button" onClick={() => void connectCodex()} disabled={busy === "codex"}><Link2 size={16} /> Connect Codex</button>}
-        <button className="btn" type="button" onClick={() => void addClient()} disabled={busy === "client"}><Plus size={16} /> Add Claude client</button>
+        <button className="btn" type="button" onClick={() => { if (!clientsOpen) void loadClients(); setClientsOpen((value) => !value); setClientToken(""); }}><Plus size={16} /> Claude clients {clients.filter((client) => !client.revokedAt).length}</button>
       </div>
 
       {error && <p className="notice error">{error}</p>}
       {codexLogin?.state === "running" && codexLogin.deviceUrl && codexLogin.userCode && <section className="device-login" aria-label="Codex device login"><div className="device-login-heading"><div><span className="metric-label">Codex account</span><h2>Complete device sign-in</h2></div><span className="status-pill"><LoaderCircle className="spin" size={13} /> Waiting</span></div><div className="device-steps"><div className="device-step"><span className="step-number">1</span><div><strong>Open secure sign-in</strong><div className="device-actions"><a className="btn primary" href={codexLogin.deviceUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} /> Open OpenAI sign-in</a><button className="btn icon" title="Copy sign-in link" aria-label="Copy sign-in link" onClick={() => void navigator.clipboard.writeText(codexLogin.deviceUrl || "")}><Clipboard size={16} /></button></div></div></div><div className="device-step"><span className="step-number">2</span><div><strong>Enter one-time code</strong><div className="device-code-row"><code className="device-code">{codexLogin.userCode}</code><button className="btn icon" title="Copy code" aria-label="Copy code" onClick={() => void navigator.clipboard.writeText(codexLogin.userCode || "")}><Clipboard size={16} /></button></div></div></div></div></section>}
       {codexLogin?.state === "finalizing" && <p className="notice"><LoaderCircle className="spin" size={14} /> Securing the authenticated Codex session.</p>}
       {codexLogin?.state === "failed" && <p className="notice error">{codexLogin.output || "Codex connection failed."}</p>}
-      {clientToken && <section className="client-setup" aria-label="Claude Code client setup">
-        <div className="client-setup-heading"><div><span className="metric-label">Claude Code</span><h2>Install the review skill</h2></div><span className="status-pill"><KeyRound size={13} /> Token shown once</span></div>
-        <div className="client-setup-body">
+      {clientsOpen && <section className="client-setup" aria-label="Claude Code client setup">
+        <div className="client-setup-heading"><div><span className="metric-label">Claude Code</span><h2>{clientToken ? "Install the review skill" : "Manage clients"}</h2></div>{clientToken && <div className="toolbar"><span className="status-pill"><KeyRound size={13} /> Token shown once</span><button className="btn icon" type="button" title="Return to client list" aria-label="Return to client list" onClick={() => setClientToken("")}><X size={16} /></button></div>}</div>
+        {!clientToken ? <div className="client-enroll">
+          <div className="field"><label htmlFor="client-name">Computer or person name</label><input id="client-name" value={clientName} maxLength={80} placeholder="Example: Alice laptop" onChange={(event) => setClientName(event.target.value)} /></div>
+          <button className="btn primary" type="button" onClick={() => void addClient()} disabled={busy === "client"}>{busy === "client" ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Create client token</button>
+        </div> : <div className="client-setup-body">
           <div className="client-setup-step"><span className="step-number">1</span><div><strong>Copy the client token</strong><p>The installer asks for this value privately in the computer terminal.</p><div className="token-box"><input readOnly value={clientToken} aria-label="Client token" /><button className="btn icon" title="Copy token" aria-label="Copy token" onClick={() => void navigator.clipboard.writeText(clientToken)}><Clipboard size={16} /></button></div></div></div>
           <div className="client-setup-step"><span className="step-number">2</span><div><strong>Run the Windows installer</strong><p>Open PowerShell on the Claude Code computer, paste this command, then enter the token.</p><pre className="installer-command">{windowsInstaller}</pre><div className="client-setup-actions"><button className="btn primary" type="button" onClick={() => void navigator.clipboard.writeText(windowsInstaller)}><Clipboard size={16} /> Copy installer</button><a className="btn" href="https://github.com/cabibbz/SolReviewGate#install-the-claude-skill" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Full instructions</a></div></div></div>
-        </div>
+        </div>}
+        {clients.length > 0 && <div className="client-list">{clients.map((client) => <div className="client-row" key={client.id}><div><strong>{client.name}</strong><span>{client.revokedAt ? `Revoked ${new Date(client.revokedAt).toLocaleDateString()}` : client.lastUsedAt ? `Last used ${new Date(client.lastUsedAt).toLocaleString()}` : "Not used yet"}</span><code>{client.id}</code></div>{!client.revokedAt && <button className={`btn icon ${clientRevokeConfirm === client.id ? "danger" : ""}`} type="button" title={clientRevokeConfirm === client.id ? "Confirm revoke" : "Revoke client"} aria-label={clientRevokeConfirm === client.id ? "Confirm revoke" : "Revoke client"} onClick={() => void revokeClaudeClient(client.id)} disabled={busy === `client:${client.id}`}>{clientRevokeConfirm === client.id ? <Check size={16} /> : <Trash2 size={16} />}</button>}</div>)}</div>}
       </section>}
 
       <nav className="view-tabs main-view-tabs" role="tablist" aria-label="Dashboard views">

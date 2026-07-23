@@ -12,6 +12,7 @@ const rawKey = (id: string) => `sol:job:${id}:raw`;
 const eventsKey = (id: string) => `sol:job:${id}:events`;
 const liveKey = (id: string) => `sol:job:${id}:live`;
 const clientKey = (hash: string) => `sol:client:${hash}`;
+const clientIdKey = (id: string) => `sol:client-id:${id}`;
 const outstandingKey = (clientId: string) => `sol:client:${clientId}:outstanding`;
 const retentionKey = "sol:settings:retention-days";
 
@@ -112,8 +113,32 @@ export async function registerClient(name: string, store: Store = getStore()): P
     tokenHash,
     createdAt: now(),
   };
-  await store.set(clientKey(tokenHash), client, 365 * 24 * 60 * 60);
+  const ttl = 365 * 24 * 60 * 60;
+  await Promise.all([
+    store.set(clientKey(tokenHash), client, ttl),
+    store.set(clientIdKey(client.id), client, ttl),
+    store.addClientIndex(client.id, client.createdAt),
+  ]);
   return { client, token };
+}
+
+export async function listClients(store: Store = getStore()): Promise<ClientRecord[]> {
+  const ids = await store.clientIds(200);
+  const records = await Promise.all(ids.map((id) => store.get<ClientRecord>(clientIdKey(id))));
+  return records.filter((client): client is ClientRecord => Boolean(client)).sort((left, right) => right.createdAt - left.createdAt);
+}
+
+export async function revokeClient(id: string, store: Store = getStore()): Promise<ClientRecord | null> {
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(id)) return null;
+  const client = await store.get<ClientRecord>(clientIdKey(id));
+  if (!client) return null;
+  const revoked = { ...client, revokedAt: client.revokedAt || now() };
+  const ttl = 365 * 24 * 60 * 60;
+  await Promise.all([
+    store.set(clientKey(client.tokenHash), revoked, ttl),
+    store.set(clientIdKey(client.id), revoked, ttl),
+  ]);
+  return revoked;
 }
 
 export async function authenticateClient(token: string, store: Store = getStore()): Promise<ClientRecord | null> {
@@ -124,7 +149,17 @@ export async function authenticateClient(token: string, store: Store = getStore(
     return { id: `env-${hash.slice(0, 12)}`, name: "Configured client", tokenHash: hash, createdAt: 0 };
   }
   const client = await store.get<ClientRecord>(clientKey(hash));
-  return client && !client.revokedAt ? client : null;
+  if (!client || client.revokedAt) return null;
+  if (!client.lastUsedAt || now() - client.lastUsedAt > 60_000) {
+    const updated = { ...client, lastUsedAt: now() };
+    const ttl = 365 * 24 * 60 * 60;
+    await Promise.all([
+      store.set(clientKey(hash), updated, ttl),
+      store.set(clientIdKey(client.id), updated, ttl),
+    ]);
+    return updated;
+  }
+  return client;
 }
 
 export async function createJob(

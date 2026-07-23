@@ -2,7 +2,7 @@
 param(
   [string]$Url = $env:SOL_GATE_URL,
   [string]$ClientToken = $env:SOL_GATE_CLIENT_TOKEN,
-  [string]$RepositoryRoot = "https://raw.githubusercontent.com/cabibbz/SolReviewGate/main",
+  [string]$RepositoryRoot = "",
   [string]$InstallRoot = (Join-Path $HOME ".sol-review"),
   [string]$ClaudeSkillsRoot = (Join-Path $HOME ".claude\skills"),
   [string]$LocalSourceRoot = "",
@@ -10,8 +10,14 @@ param(
   [switch]$SkipVerify
 )
 
+$ReleaseVersion = "3.0.0"
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+
+function Write-Step([int]$Number, [string]$Message) {
+  Write-Host ""
+  Write-Host "[$Number/4] $Message" -ForegroundColor Cyan
+}
 
 function Read-SecretText([string]$Prompt) {
   $secure = Read-Host $Prompt -AsSecureString
@@ -32,9 +38,24 @@ function Copy-SourceFile([string]$RelativePath, [string]$Destination) {
   Invoke-WebRequest -UseBasicParsing -Uri $source -OutFile $Destination
 }
 
+Write-Host ""
+Write-Host "Sol Review Gate $ReleaseVersion" -ForegroundColor Cyan
+Write-Host "Claude Code client and personal /sol skill"
+Write-Host ""
+Write-Host "This installer writes only to your user profile:"
+Write-Host "  $InstallRoot"
+Write-Host "  $(Join-Path $ClaudeSkillsRoot 'sol')"
+
+if (-not $RepositoryRoot) {
+  $RepositoryRoot = "https://raw.githubusercontent.com/cabibbz/SolReviewGate/v$ReleaseVersion"
+}
+
+Write-Step 1 "Checking requirements"
 if (-not $Url) {
-  $enteredUrl = Read-Host "PWA address [https://sol-review-gate.vercel.app]"
-  $Url = if ($enteredUrl) { $enteredUrl } else { "https://sol-review-gate.vercel.app" }
+  $Url = Read-Host "Private PWA address (example: https://your-project.vercel.app)"
+}
+if (-not $Url) {
+  throw "The private PWA address is required. The public demo is not a client service."
 }
 $Url = $Url.Trim().TrimEnd("/")
 $parsedUrl = $null
@@ -61,7 +82,14 @@ $nodeMajor = [int]((& node --version).TrimStart("v").Split(".")[0])
 if ($nodeMajor -lt 18) {
   throw "Node.js 18 or newer is required."
 }
+$claude = Get-Command claude -ErrorAction SilentlyContinue
+if ($claude) {
+  Write-Host "Node.js and Claude Code are available." -ForegroundColor Green
+} else {
+  Write-Warning "Claude Code was not found on PATH. The skill will still be installed, but /sol becomes available after Claude Code is installed and restarted."
+}
 
+Write-Step 2 "Verifying the private PWA client"
 if (-not $SkipVerify) {
   try {
     $verified = Invoke-RestMethod -Method Get -Uri "$Url/api/client/verify" -Headers @{ Authorization = "Bearer $ClientToken" }
@@ -69,6 +97,9 @@ if (-not $SkipVerify) {
   } catch {
     throw "The PWA could not verify this client token. Create a new Claude client on the phone and try again."
   }
+  Write-Host "The PWA accepted this client token." -ForegroundColor Green
+} else {
+  Write-Host "PWA verification was skipped by an explicit installer option." -ForegroundColor Yellow
 }
 
 $ClientRoot = Join-Path $InstallRoot "client"
@@ -76,6 +107,7 @@ $BinRoot = Join-Path $InstallRoot "bin"
 $SkillRoot = Join-Path $ClaudeSkillsRoot "sol"
 $staging = Join-Path ([IO.Path]::GetTempPath()) "solreviewinstaller$([Guid]::NewGuid().ToString('N'))"
 
+Write-Step 3 "Installing the client and personal skill"
 try {
   New-Item -ItemType Directory -Force -Path $staging, $ClientRoot, $BinRoot, $SkillRoot | Out-Null
   $stagedClient = Join-Path $staging "solreview.js"
@@ -116,7 +148,9 @@ try {
   }
 }
 
+Write-Step 4 "Finishing setup"
 Write-Host ""
-Write-Host "Sol Review is installed."
-Write-Host "Restart Claude Code, then run /sol in any session."
+Write-Host "Installation complete." -ForegroundColor Green
+Write-Host "Restart Claude Code, then run /sol in any existing or new session."
 Write-Host "The client credential is stored outside the project at $InstallRoot."
+Write-Host "No packet or configuration file was added to a Claude project."

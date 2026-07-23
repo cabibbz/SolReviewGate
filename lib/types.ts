@@ -98,5 +98,6 @@ export interface ClientRecord {
   name: string;
   tokenHash: string;
   createdAt: number;
+  lastUsedAt?: number;
   revokedAt?: number;
 }

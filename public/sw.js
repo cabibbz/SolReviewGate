@@ -1,4 +1,4 @@
-const CACHE = "sol-gate-shell-v7";
+const CACHE = "sol-gate-shell-v8";
 const SHELL = ["/", "/manifest.webmanifest", "/logo.webp", "/brandmark.png", "/favicon.png", "/appleicon.png", "/icon192.png", "/icon512.png"];
 
 self.addEventListener("install", (event) => {

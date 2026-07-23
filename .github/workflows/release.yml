@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --global npm@10.9.8
+      - run: npm ci
+      - run: sh -n install.sh
+      - run: node --check plugins/solreview/bin/solreview.js
+      - run: npm run verify
+      - run: npm run test:e2e
+
+  package:
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --global npm@10.9.8
+      - run: npm ci
+      - run: node --test tests/installer.test.js tests/release.test.js
+      - name: Build release files
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".Substring(1)
+          ./scripts/package-release.ps1 -Version $version
+      - name: Test packaged Windows installer
+        shell: pwsh
+        run: ./tests/release-package.test.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SolReviewGateRelease
+          path: distrelease/*
+          if-no-files-found: error
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SolReviewGateRelease
+          path: distrelease
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" distrelease/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" distrelease/* \
+              --verify-tag \
+              --title "Sol Review Gate $GITHUB_REF_NAME" \
+              --generate-notes \
+              --repo "$GITHUB_REPOSITORY"
+          fi

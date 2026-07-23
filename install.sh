@@ -1,10 +1,26 @@
 #!/usr/bin/env sh
 set -eu
 
-url="${SOL_GATE_URL:-https://sol-review-gate.vercel.app}"
-repository_root="${SOL_REPOSITORY_ROOT:-https://raw.githubusercontent.com/cabibbz/SolReviewGate/main}"
+release_version="3.0.0"
+url="${SOL_GATE_URL:-}"
+repository_root="${SOL_REPOSITORY_ROOT:-https://raw.githubusercontent.com/cabibbz/SolReviewGate/v$release_version}"
 install_root="${SOL_INSTALL_ROOT:-$HOME/.sol-review}"
 skills_root="${SOL_CLAUDE_SKILLS_ROOT:-$HOME/.claude/skills}"
+
+printf "\nSol Review Gate %s\n" "$release_version"
+printf "Claude Code client and personal /sol skill\n\n"
+printf "This installer writes only to your user profile:\n"
+printf "  %s\n" "$install_root"
+printf "  %s/sol\n\n" "$skills_root"
+
+if [ -z "$url" ]; then
+  printf "Private PWA address (example: https://your-project.vercel.app): "
+  IFS= read -r url
+fi
+if [ -z "$url" ]; then
+  printf "The private PWA address is required. The public demo is not a client service.\n" >&2
+  exit 1
+fi
 
 if [ -z "${SOL_GATE_CLIENT_TOKEN:-}" ]; then
   printf "Client token from the phone PWA: "
@@ -36,6 +52,9 @@ node_major="$(node --version | sed 's/^v//' | cut -d. -f1)"
 if [ "$node_major" -lt 18 ]; then
   printf "Node.js 18 or newer is required.\n" >&2
   exit 1
+fi
+if ! command -v claude >/dev/null 2>&1; then
+  printf "Note: Claude Code is not on PATH yet. The skill will be ready after Claude Code is installed.\n"
 fi
 if ! command -v curl >/dev/null 2>&1; then
   printf "curl is required.\n" >&2
@@ -75,5 +94,6 @@ case ":$PATH:" in
     ;;
 esac
 
-printf "\nSol Review is installed.\n"
-printf "Restart your shell and Claude Code, then run /sol in any session.\n"
+printf "\nInstallation complete.\n"
+printf "Restart your shell and Claude Code, then run /sol in any existing or new session.\n"
+printf "No packet or configuration file was added to a Claude project.\n"

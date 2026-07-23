@@ -1,6 +1,8 @@
 # PWA Deployment
 
-This guide creates an independent Sol Review Gate deployment. Each deployment has one paired phone administrator and can enroll multiple Claude Code clients.
+This guide creates an independent Sol Review Gate deployment. Each deployment has one paired phone administrator, one isolated Codex connection, and any number of separately revocable Claude Code clients.
+
+The public page at `/demo` is read only sample data. It is safe to share. The root PWA is the private control plane and should be used only by its paired owner.
 
 ## Requirements
 
@@ -115,14 +117,32 @@ The server creates a temporary Sandbox, installs the configured Codex CLI versio
 
 ## Enroll Claude Code
 
-1. Tap **Add Claude client** in the PWA.
-2. Copy the token shown once.
-3. Run the installer command shown by the PWA on the Claude Code computer.
-4. Enter the token at the private prompt.
-5. Restart Claude Code.
-6. Run `/sol`.
+1. Tap **Claude clients** in the PWA.
+2. Enter a recognizable computer or person name.
+3. Tap **Create client token**.
+4. Copy the token shown once.
+5. Run the installer command shown by the PWA on the Claude Code computer.
+6. Enter the token at the private prompt.
+7. Restart Claude Code.
+8. Run `/sol`.
 
 The installer calls `/api/client/verify` before writing the credential, so an incorrect PWA address or token fails before installation.
+
+Repeat these steps for every Claude computer. Do not reuse one token across people. The client manager records recent use and can revoke one client without affecting any other active client.
+
+## Public Demo And Private Use
+
+The hosted demonstration at `https://sol-review-gate.vercel.app/demo` has no registration or account connection capability. It is not a public review service.
+
+Every person who wants a private working PWA should deploy their own copy. A deployment owns:
+
+1. One phone signing key
+2. One Codex authentication snapshot
+3. One Redis namespace and encrypted review history
+4. One master encryption key
+5. Its own named Claude client credentials
+
+Running a shared public service would require user accounts, tenant level data isolation, usage billing, abuse controls, and separate Codex authorization for every tenant. Those boundaries are intentionally not simulated by this single administrator design.
 
 ## Retention And Recovery
 

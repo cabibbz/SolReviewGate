@@ -9,12 +9,14 @@
 </p>
 
 <p align="center">
-  <a href="https://sol-review-gate.vercel.app">Hosted PWA</a>
-  ·
+  <a href="https://sol-review-gate.vercel.app/demo">Live demo</a>
+  &nbsp;|&nbsp;
+  <a href="https://github.com/cabibbz/SolReviewGate/releases/latest">Latest release</a>
+  &nbsp;|&nbsp;
   <a href="docs/DEPLOYMENT.md">Self hosting</a>
-  ·
+  &nbsp;|&nbsp;
   <a href="docs/ARCHITECTURE.md">Architecture</a>
-  ·
+  &nbsp;|&nbsp;
   <a href="docs/SECURITY.md">Security model</a>
 </p>
 
@@ -45,7 +47,9 @@ The phone retains the operator view. It can show the packet, observable model ev
 | Complete release gate | Scans the entire structured response before releasing any part to Claude |
 | Phone only diagnostics | Keeps withholding reasons, raw events, internal classifications, and protocol fingerprints in the PWA |
 | Retained history | Encrypts review packets and results with configurable retention from 1 to 30 days |
+| Named clients | Creates a separate credential for every Claude computer and revokes one without interrupting the others |
 | Alignment lab | Separates released reviews, model withholding, wrapper blocks, worker failures, and infrastructure failures by protocol version |
+| Public demo | Shows the complete mobile interface with sample data and no access to private accounts or records |
 | PWA operation | Installs on a phone home screen and remains usable across ordinary mobile navigation and reconnects |
 
 ## How It Works
@@ -68,31 +72,33 @@ The system transfers visible session context. No API can extract hidden model st
 
 Requirements are Node.js 18 or newer and Claude Code.
 
-1. Open the phone PWA.
-2. Tap **Add Claude client**.
+1. Open your private phone PWA.
+2. Tap **Claude clients** and enter a name for this computer.
 3. Copy the client token. It is shown once.
 4. Open PowerShell on the computer that runs Claude Code.
 5. Run:
 
 ```powershell
-$env:SOL_GATE_URL='https://sol-review-gate.vercel.app'; irm 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/install.ps1' | iex
+$env:SOL_GATE_URL='https://your-private-pwa.example'; irm 'https://github.com/cabibbz/SolReviewGate/releases/latest/download/SolReviewSetup.ps1' | iex
 ```
 
 6. Paste the client token into the private terminal prompt.
 7. Restart Claude Code and run `/sol`.
 
-The installer validates the PWA and token before changing files. It installs the client under `%USERPROFILE%\.sol-review`, adds a personal Claude skill at `%USERPROFILE%\.claude\skills\sol\SKILL.md`, and adds the client command to the user PATH.
+The installer validates the PWA and token before changing files. It installs the client under `%USERPROFILE%\.sol-review`, adds a personal Claude skill at `%USERPROFILE%\.claude\skills\sol\SKILL.md`, and adds the client command to the user PATH. It does not modify a project or restart an active Claude session.
 
 To inspect the installer before running it:
 
 ```powershell
-irm 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/install.ps1'
+irm 'https://github.com/cabibbz/SolReviewGate/releases/latest/download/SolReviewSetup.ps1'
 ```
+
+For a visible downloaded installer, get `SolReviewGateWindows.zip` from the [latest release](https://github.com/cabibbz/SolReviewGate/releases/latest), extract it, and open `Install.cmd`. The package also contains `SolReviewRemove.ps1`.
 
 ### macOS And Linux
 
 ```sh
-SOL_GATE_URL='https://sol-review-gate.vercel.app' sh -c "$(curl -fsSL 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/install.sh')"
+SOL_GATE_URL='https://your-private-pwa.example' sh -c "$(curl -fsSL 'https://github.com/cabibbz/SolReviewGate/releases/latest/download/SolReviewSetup.sh')"
 ```
 
 The shell installer uses the same private token prompt and installs `/sol` as a personal Claude skill.
@@ -107,7 +113,7 @@ This repository is also a Claude Code plugin marketplace:
 /reload-plugins
 ```
 
-The managed plugin exposes `/solreview:sol`. Run one of the operating system installers once to configure the PWA address and client credential. The personal installer remains the simplest path when you want the exact `/sol` command.
+The managed plugin exposes `/solreview:sol`. Run an operating system installer once to configure the PWA address and client credential. The personal installer remains the simplest path when you want the exact `/sol` command.
 
 ## Use It In An Existing Session
 
@@ -124,6 +130,14 @@ Add a focus after the command when needed:
 ```
 
 The skill uses the context already visible in the ongoing Claude Code session. It asks Claude to include exact file paths, line numbers, command output, URLs, document titles, screenshots, errors, and other sources that materially support the decision.
+
+## Use More Than One Computer
+
+A private deployment can register multiple named Claude clients. Give each computer its own token. The phone shows when each client was last used and can revoke one credential without changing the others.
+
+Do not use the project demo deployment as a shared account. Every owner or trusted group should deploy a separate PWA with its own Redis database, phone approval key, Codex connection, encryption key, and clients. This prevents another person from using your Codex account or seeing your review history.
+
+The [live demo](https://sol-review-gate.vercel.app/demo) is deliberately read only. It cannot pair a phone, connect Codex, create credentials, submit a packet, or access the private PWA.
 
 ## Set Up Your Own PWA
 
@@ -147,6 +161,8 @@ Follow [the deployment guide](docs/DEPLOYMENT.md) for the complete setup. The sh
 7. Tap **Connect Codex** and complete OpenAI device sign in.
 8. Create a Claude client and run the installer using your deployed PWA address.
 
+The GitHub repository is the reusable source and release channel. The hosted demo is only a product demonstration; it never shares the repository owner's private control plane.
+
 Provider pricing and quotas change. Review the current [Vercel pricing](https://vercel.com/pricing), [Vercel Sandbox documentation](https://vercel.com/docs/vercel-sandbox), and [Upstash pricing](https://upstash.com/pricing) before relying on the service for frequent use.
 
 ## Security Boundary
@@ -159,6 +175,19 @@ Public source code is not a secrecy boundary. A Claude process with unrestricted
 
 Read [the security model](docs/SECURITY.md) before exposing a deployment to other people.
 
+## Releases
+
+Every version tag runs the complete verification and mocked end to end cycle before GitHub publishes:
+
+| File | Purpose |
+| --- | --- |
+| `SolReviewSetup.ps1` | One line Windows installer |
+| `SolReviewSetup.sh` | macOS and Linux installer |
+| `SolReviewGateWindows.zip` | Downloadable Windows installer with local payload |
+| `SolReviewPlugin.zip` | Versioned Claude plugin marketplace package |
+| `SolReviewRemove.ps1` | Windows remover |
+| `SHA256SUMS.txt` | SHA 256 checksums for every release file |
+
 ## Development
 
 ```powershell
@@ -167,6 +196,7 @@ npm run config:init
 npm run verify
 npm run test:e2e
 npm run plugin:validate
+npm run release:package
 ```
 
 The local configuration uses an in memory store and a mock Sandbox. Production mode fails closed if Redis, server secrets, or Codex authentication are unavailable.
@@ -180,7 +210,7 @@ The local configuration uses an in memory store and a mock Sandbox. Production m
 | `lib` | Authentication, cryptography, storage, job lifecycle, gate logic, and Sandbox orchestration |
 | `sandbox` | Isolated worker, output schema, denied tool hook, and review policy |
 | `plugins/solreview` | Claude Code plugin, `/sol` skill source, and dependency free client |
-| `scripts` | Local configuration, icons, and test server helpers |
+| `scripts` | Local configuration, release packaging, icons, and test server helpers |
 | `tests/core` | Gate, auth, packet, schema, storage, and runtime tests |
 | `tests/e2e` | Complete mocked pair, enroll, upload, approve, review, retain, and reject cycle |
 | `docs` | Deployment, architecture, and security documentation |
