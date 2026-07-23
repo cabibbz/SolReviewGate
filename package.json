@@ -2,6 +2,7 @@
   "name": "solreviewgate",
   "version": "3.0.0",
   "private": true,
+  "packageManager": "npm@10.9.8",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

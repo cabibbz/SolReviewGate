@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - run: npm install --global npm@10.9.8
       - run: npm ci
       - run: sh -n install.sh
       - run: node --check plugins/solreview/bin/solreview.js
