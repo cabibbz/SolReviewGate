@@ -363,7 +363,7 @@ button { cursor: pointer; }
   .toolbar { width: 100%; }
   .approval-bar { flex-wrap: wrap; }
   .toolbar .btn { flex: 1 1 auto; }
-  .dashboard-actions .btn.icon, .header-actions .btn.icon { flex: 0 0 38px; }
+  .toolbar .btn.icon, .dashboard-actions .btn.icon, .header-actions .btn.icon { flex: 0 0 38px; }
   .panel { box-shadow: none; }
   .empty { min-height: 180px; }
 }
