@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "solreview",
+  "description": "Independent phone approved Codex review for Claude Code decisions",
+  "version": "3.0.0",
+  "author": {
+    "name": "cabibbz"
+  },
+  "homepage": "https://github.com/cabibbz/SolReviewGate",
+  "repository": "https://github.com/cabibbz/SolReviewGate",
+  "license": "MIT",
+  "keywords": [
+    "review",
+    "alignment",
+    "codex",
+    "claude"
+  ]
+}

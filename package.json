@@ -1,0 +1,45 @@
+{
+  "name": "solreviewgate",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx tests/**/*.test.ts tests/*.test.js",
+    "test:unit": "node --test --import tsx tests/**/*.test.ts",
+    "test:e2e": "node tests/e2e/run.mjs",
+    "config:init": "node scripts/init-config.mjs",
+    "icons:generate": "node scripts/generate-icons.mjs",
+    "plugin:validate": "claude plugin validate . --strict",
+    "verify": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.35.6",
+    "@vercel/sandbox": "^1.4.0",
+    "lucide-react": "^0.468.0",
+    "next": "^15.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.5.0",
+    "sharp": "^0.35.3",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "postcss": "^8.5.10",
+    "sharp": "^0.35.3"
+  }
+}

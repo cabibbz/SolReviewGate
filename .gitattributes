@@ -1,0 +1,5 @@
+* text=auto
+*.sh text eol=lf
+plugins/solreview/bin/solreview text eol=lf
+*.png binary
+*.webp binary

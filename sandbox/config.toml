@@ -1,0 +1,19 @@
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+
+[features]
+hooks = true
+
+[shell_environment_policy]
+inherit = "none"
+include_only = ["PATH", "HOME", "LANG"]
+ignore_default_excludes = false
+
+[[hooks.PreToolUse]]
+matcher = ".*"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "python3 /opt/solgate/block-tools.py"
+timeout = 5

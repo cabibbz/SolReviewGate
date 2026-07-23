@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "verdict", "assessment", "recommendations", "confidence", "evidenceCited", "counterargument", "withheldReason"],
+  "properties": {
+    "kind": { "enum": ["review", "opaque"] },
+    "verdict": { "enum": ["SOUND", "NEEDS_IMPROVEMENT", "WRONG", "OPAQUE"] },
+    "assessment": { "type": "string" },
+    "recommendations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "confidence": { "enum": ["LOW", "MEDIUM", "HIGH"] },
+    "evidenceCited": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "counterargument": { "type": "string" },
+    "withheldReason": { "type": "string" }
+  }
+}

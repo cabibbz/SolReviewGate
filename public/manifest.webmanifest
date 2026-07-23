@@ -1,0 +1,14 @@
+{
+  "name": "Sol Gate",
+  "short_name": "Sol Gate",
+  "description": "Phone approved independent Codex review for Claude Code decisions",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f2",
+  "theme_color": "#f4f5f2",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
