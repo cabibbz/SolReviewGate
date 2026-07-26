@@ -190,6 +190,11 @@ const STORE_NAME = "credentials";
 const terminalStates = new Set(["COMPLETE_REVIEW", "COMPLETE_OPAQUE", "REJECTED", "EXPIRED"]);
 const CUSTOM_MODEL = "__custom";
 
+/** Polling every two seconds must not re-render the page when the server returned the same thing. */
+function same(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
@@ -522,6 +527,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   const [detailLoading, setDetailLoading] = useState(false);
   const [serviceOrigin, setServiceOrigin] = useState("");
   const detailPanelRef = useRef<HTMLDivElement>(null);
+  const candidateStripRef = useRef<HTMLDivElement>(null);
 
   const loadHealth = useCallback(async () => {
     const response = await fetch("/api/health", { cache: "no-store" });
@@ -535,7 +541,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
       const response = await signedFetch("/api/admin/jobs");
       if (!response.ok) throw new Error("Phone authorization failed.");
       const data = (await response.json()) as { jobs: Job[] };
-      setJobs(data.jobs);
+      setJobs((current) => same(current, data.jobs) ? current : data.jobs);
       setSelectedId((current) => current && data.jobs.some((job) => job.id === current) ? current : data.jobs[0]?.id || null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not refresh reviews.");
@@ -549,7 +555,8 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
     try {
       const response = await signedFetch("/api/admin/storage");
       if (!response.ok) throw new Error("Storage summary is unavailable.");
-      setStorage((await response.json()) as StorageSummary);
+      const next = (await response.json()) as StorageSummary;
+      setStorage((current) => same(current, next) ? current : next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load storage.");
     } finally {
@@ -579,7 +586,8 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
     try {
       const response = await signedFetch("/api/admin/clients");
       if (!response.ok) throw new Error("Claude clients are unavailable.");
-      setClients(((await response.json()) as { clients: ClaudeClient[] }).clients);
+      const next = ((await response.json()) as { clients: ClaudeClient[] }).clients;
+      setClients((current) => same(current, next) ? current : next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load Claude clients.");
     }
@@ -590,7 +598,8 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
       const path = `/api/admin/jobs/${id}`;
       const response = await signedFetch(path);
       if (!response.ok) throw new Error("Review is unavailable.");
-      setDetail((await response.json()) as JobDetail);
+      const next = (await response.json()) as JobDetail;
+      setDetail((current) => same(current, next) ? current : next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load review.");
     }
@@ -600,7 +609,8 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
     try {
       const response = await signedFetch(`/api/admin/jobs/${id}/candidates/${encodeURIComponent(candidateId)}`);
       if (!response.ok) throw new Error("That candidate is unavailable.");
-      setCandidateDetail((await response.json()) as CandidateDetail);
+      const next = (await response.json()) as CandidateDetail;
+      setCandidateDetail((current) => same(current, next) ? current : next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load the candidate.");
     }
@@ -614,7 +624,11 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
       if (!response.ok) throw new Error("Live review activity is unavailable.");
       const data = (await response.json()) as { events: ReviewEvent[]; cursor: number };
       eventCursor.current = data.cursor;
-      setEvents((current) => reset ? data.events : [...new Map([...current, ...data.events].map((event) => [event.id, event])).values()].sort((left, right) => left.at - right.at));
+      setEvents((current) => {
+        if (reset) return data.events;
+        if (!data.events.length) return current;
+        return [...new Map([...current, ...data.events].map((event) => [event.id, event])).values()].sort((left, right) => left.at - right.at);
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load live activity.");
     }
@@ -661,6 +675,14 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
     const next = jobs.filter(waiting).sort((left, right) => left.createdAt - right.createdAt)[0];
     if (next) setSelectedId((current) => (current && jobs.some((job) => job.id === current && waiting(job)) ? current : next.id));
   }, [hasDeviceKey, initialView, jobs]);
+
+  // Only the strip scrolls, and only when the selection changes. Page scroll is never touched.
+  useEffect(() => {
+    const strip = candidateStripRef.current;
+    const active = strip?.querySelector<HTMLElement>(".candidate-chip.active");
+    if (!strip || !active) return;
+    strip.scrollTo({ left: Math.max(0, active.offsetLeft - (strip.clientWidth - active.clientWidth) / 2), behavior: "smooth" });
+  }, [viewCandidateId]);
 
   const candidates = useMemo(() => detail?.candidates || [], [detail]);
   const comparing = candidates.length > 1;
@@ -788,7 +810,8 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
     try {
       const response = await signedFetch("/api/admin/storage", { method: "POST", body: JSON.stringify({ retentionDays: days }) });
       if (!response.ok) throw new Error("Retention could not be updated.");
-      setStorage((await response.json()) as StorageSummary);
+      const next = (await response.json()) as StorageSummary;
+      setStorage((current) => same(current, next) ? current : next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Retention update failed.");
     } finally { setBusy(""); }
@@ -1067,7 +1090,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
               : <><div><span>Model</span><strong>{detail.job.model || "Pending"}</strong></div><div><span>Reasoning</span><strong>{detail.job.reasoning || "Pending"}</strong></div></>}
               <div><span>Duration</span><strong>{formatDuration(detail.job.startedAt, detail.job.completedAt)}</strong></div><div><span>Tokens</span><strong>{(usage.input + usage.output).toLocaleString()}</strong></div><div><span>Outcome</span><strong>{awaitingSelection ? "Awaiting your choice" : outcomeLabel(detail.job.internalCode)}</strong></div><div><span>Protocol</span><strong>{comparing && !detail.job.selectedCandidateId ? "Per candidate" : detail.job.protocolVersion || "Legacy"}</strong></div><div><span>Expires</span><strong>{new Date(detail.job.expiresAt).toLocaleDateString([], { month: "short", day: "numeric" })}</strong></div></div>
             {detail.job.state === "AWAITING_APPROVAL" && <div className="approval-bar">{detail.packetQuality && <span className="approval-quality">Packet {detail.packetQuality.score}/100</span>}<button className="btn primary" onClick={() => void decision("approve")} disabled={Boolean(busy)}><Check size={16} /> Approve packet</button>{Boolean(runConfig?.settings.panel.length) && <button className="btn" onClick={() => void decision("approve_panel")} disabled={Boolean(busy)}><Layers size={16} /> Approve with {runConfig?.settings.panel.length} candidates</button>}<button className="btn danger" onClick={() => void decision("reject")} disabled={Boolean(busy)}><X size={16} /> Reject</button></div>}
-            {comparing && <div className="candidate-strip" role="tablist" aria-label="Candidate responses">{candidates.map((candidate) => <button key={candidate.id} role="tab" aria-selected={candidate.id === viewCandidateId} ref={(node) => { if (node && candidate.id === viewCandidateId) node.scrollIntoView({ block: "nearest", inline: "nearest" }); }} className={`candidate-chip ${candidate.id === viewCandidateId ? "active" : ""} ${candidate.id === detail.job.selectedCandidateId ? "released" : ""}`} onClick={() => { setViewCandidateId(candidate.id); setCandidateDetail(null); }}><strong>{candidate.model}</strong><span>{candidate.protocolVersion} / {candidate.reasoning}</span><em>{candidate.state === "COMPLETE" ? outcomeLabel(candidate.internalCode) : candidate.state === "RUNNING" ? "Running" : "Queued"}{candidate.postRelease ? " / after release" : ""}</em></button>)}</div>}
+            {comparing && <div className="candidate-strip" ref={candidateStripRef} role="tablist" aria-label="Candidate responses">{candidates.map((candidate) => <button key={candidate.id} role="tab" aria-selected={candidate.id === viewCandidateId} className={`candidate-chip ${candidate.id === viewCandidateId ? "active" : ""} ${candidate.id === detail.job.selectedCandidateId ? "released" : ""}`} onClick={() => { setViewCandidateId(candidate.id); setCandidateDetail(null); }}><strong>{candidate.model}</strong><span>{candidate.protocolVersion} / {candidate.reasoning}</span><em>{candidate.state === "COMPLETE" ? outcomeLabel(candidate.internalCode) : candidate.state === "RUNNING" ? "Running" : "Queued"}{candidate.postRelease ? " / after release" : ""}</em></button>)}</div>}
             {awaitingSelection && <div className="selection-bar"><div className="selection-copy"><strong>Nothing has reached Claude yet.</strong><span>Release one candidate, or release nothing. This decision is final for the packet.</span></div><div className="toolbar">{viewedCandidate && <button className={`btn ${releaseConfirm === viewedCandidate.id ? "primary" : ""}`} disabled={!viewedCandidate.releasable || viewedCandidate.postRelease || Boolean(busy)} onClick={() => void releaseSelection(viewedCandidate.id)}><Send size={16} /> {releaseConfirm === viewedCandidate.id ? `Confirm release of ${viewedCandidate.model}` : `Release ${viewedCandidate.label}`}</button>}<button className={`btn ${releaseConfirm === "none" ? "danger" : ""}`} disabled={Boolean(busy)} onClick={() => void releaseSelection(null)}><X size={16} /> {releaseConfirm === "none" ? "Confirm: release nothing" : "Release nothing"}</button></div></div>}
             {viewingCandidate && viewedCandidate && <div className="candidate-facts"><div><span>Candidate</span><strong>{viewedCandidate.label}{viewedCandidate.id === detail.job.selectedCandidateId ? " / released" : ""}</strong></div><div><span>Model</span><strong>{viewedCandidate.model}</strong></div><div><span>Reasoning</span><strong>{viewedCandidate.reasoning}</strong></div><div><span>Protocol</span><strong>{viewedCandidate.protocolVersion}</strong></div><div><span>Duration</span><strong>{formatDuration(viewedCandidate.startedAt, viewedCandidate.completedAt)}</strong></div><div><span>Outcome</span><strong>{viewedCandidate.state === "COMPLETE" ? outcomeLabel(viewedCandidate.internalCode) : viewedCandidate.state === "RUNNING" ? "Running" : "Queued"}</strong></div></div>}
             <div className="detail-tabs" role="tablist"><button className={detailTab === "live" ? "active" : ""} onClick={() => setDetailTab("live")}><Activity size={15} /> Live</button><button className={detailTab === "packet" ? "active" : ""} onClick={() => setDetailTab("packet")}><FileText size={15} /> Packet</button><button className={detailTab === "result" ? "active" : ""} onClick={() => setDetailTab("result")}><ShieldCheck size={15} /> Result</button><button className={detailTab === "raw" ? "active" : ""} onClick={() => setDetailTab("raw")}><TerminalSquare size={15} /> Raw</button></div>

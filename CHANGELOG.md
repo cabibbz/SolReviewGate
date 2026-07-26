@@ -27,6 +27,9 @@
 
 ### Fixed
 
+* The page jumped back up while reading. The candidate strip scrolled itself into view from an inline `ref` callback, which React re-invokes on every render, so each two second poll dragged the page back to the strip. Only the strip scrolls now, horizontally, and only when the selection changes
+* Polling no longer re-renders the page when the server returned the same jobs, review, candidate, storage, clients, or events
+
 * The suggested model list contained ids the Codex CLI does not accept, including `gpt-5.6` and `gpt-5.6-codex`. It now lists the real ids: `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, and `gpt-5.2-codex`
 * A model the Codex CLI cannot resolve is now recorded as `MODEL_UNAVAILABLE` and shown as "Model not available to this account", instead of a generic worker rejection
 * Every comparison slot now has its own protocol and reasoning effort picker, so changing the active protocol no longer leaves existing slots on the protocol they were created with, with `Match protocol and effort above` to align them in one tap
