@@ -430,6 +430,50 @@ function parseParallelAnswer(value: string | null): ParallelAnswer | null {
   }
 }
 
+interface ComparisonRow {
+  id: string;
+  model: string;
+  protocolVersion: string;
+  verdict: string;
+  confidence: string;
+  releasable: boolean;
+  evidence: string[];
+}
+
+/** Reads the candidate responses into one comparison, so disagreement is visible before reading. */
+function comparison(rows: Candidate[]): { rows: ComparisonRow[]; agreement: string; evidence: { source: string; models: string[] }[] } | null {
+  const parsed = rows
+    .filter((candidate) => !candidate.postRelease && candidate.state === "COMPLETE")
+    .map((candidate) => {
+      const result = parseResult(candidate.result || null);
+      return {
+        id: candidate.id,
+        model: candidate.model,
+        protocolVersion: candidate.protocolVersion,
+        verdict: candidate.releasable && result ? result.verdict : "No answer",
+        confidence: result?.confidence || "",
+        releasable: Boolean(candidate.releasable),
+        evidence: result?.evidence || [],
+      };
+    });
+  if (parsed.length < 2) return null;
+  const verdicts = parsed.filter((row) => row.releasable).map((row) => row.verdict);
+  const counts = new Map<string, number>();
+  for (const verdict of verdicts) counts.set(verdict, (counts.get(verdict) || 0) + 1);
+  const ranked = [...counts.entries()].sort((left, right) => right[1] - left[1]);
+  const agreement = !ranked.length
+    ? "No candidate produced a releasable answer."
+    : ranked.length === 1
+      ? `All ${ranked[0][1]} usable answers agree: ${ranked[0][0]}.`
+      : `${ranked.map(([verdict, count]) => `${count} say ${verdict}`).join(", ")}. They disagree.`;
+  const sources = [...new Set(parsed.flatMap((row) => row.evidence))].sort();
+  const evidence = sources.map((source) => ({
+    source,
+    models: parsed.filter((row) => row.evidence.includes(source)).map((row) => row.model),
+  }));
+  return { rows: parsed, agreement, evidence };
+}
+
 function ResultCard({ result, phoneOnly = false }: { result: ReadableResult; phoneOnly?: boolean }) {
   return <article className={`readable-result ${result.released ? "released" : "not-released"}`}>
     {phoneOnly && <div className="phone-only-label"><LockKeyhole size={14} /><span>Phone only. This is never sent to Claude.</span></div>}
@@ -862,6 +906,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
     : null;
   const parallelAnswer = parallelJob ? parseParallelAnswer(shownRaw) : null;
   const shownEvents = viewingCandidate ? candidateDetail?.events || [] : events;
+  const candidateComparison = comparison(candidates);
   const awaitingSelection = detail?.job.state === "AWAITING_SELECTION";
   const canRunAgain = Boolean(detail && (awaitingSelection || detail.job.state === "COMPLETE_REVIEW" || detail.job.state === "COMPLETE_OPAQUE"));
   const lastEvent = events.length ? events[events.length - 1] : undefined;
@@ -963,6 +1008,11 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
             </div>
           </> : <>
             <div className="panel decision-note"><LockKeyhole size={15} /><span>Nothing has reached Claude yet. Release one response, or release nothing. This decision is final for the packet.</span></div>
+            {candidateComparison && <div className="panel compare-panel">
+              <div className="compare-agreement"><strong>{candidateComparison.agreement}</strong></div>
+              <div className="matrix-scroll"><table className="compare-table"><thead><tr><th scope="col">Model</th><th scope="col">Verdict</th><th scope="col">Confidence</th></tr></thead><tbody>{candidateComparison.rows.map((row) => <tr key={row.id} className={row.releasable ? "" : "blocked-row"}><th scope="row"><strong>{row.model}</strong><span>{row.protocolVersion}</span></th><td>{row.verdict}</td><td>{row.confidence || "—"}</td></tr>)}</tbody></table></div>
+              {candidateComparison.evidence.length > 0 && <details className="disclosure"><summary>Which sources each one used</summary><div className="evidence-overlap">{candidateComparison.evidence.map((entry) => <div key={entry.source}><code>{entry.source}</code><span>{entry.models.length === candidateComparison.rows.length ? "cited by all" : `only ${entry.models.join(", ")}`}</span></div>)}</div></details>}
+            </div>}
             <div className="candidate-cards">{candidates.filter((candidate) => !candidate.postRelease).map((candidate) => {
               const summary = parseResult(candidate.result || null);
               return <article className={`panel candidate-card ${candidate.releasable ? "" : "blocked"}`} key={candidate.id}>
@@ -1024,9 +1074,13 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
               <div className="field"><label htmlFor="run-reasoning">Reasoning effort</label><select id="run-reasoning" value={configDraft.reasoning} disabled={busy === "settings"} onChange={(event) => setConfigDraft({ ...configDraft, reasoning: event.target.value })}>{runConfig.reasoningChoices.map((effort) => <option key={effort} value={effort}>{effort}</option>)}</select></div>
               <div className="field"><label htmlFor="run-protocol">Alignment protocol</label><select id="run-protocol" value={configDraft.protocolId} disabled={busy === "settings"} onChange={(event) => setConfigDraft({ ...configDraft, protocolId: event.target.value })}>{runConfig.protocols.map((protocol) => <option key={protocol.id} value={protocol.id}>{protocol.label}</option>)}</select></div>
               {draftProtocol && <p className="section-copy">{draftProtocol.summary} Runs are recorded as <code>{draftProtocol.version}</code>.</p>}
+              <div className="panel-subhead"><strong>Models at once</strong><span>{configDraft.panel.length || 1}</span></div>
+              <p className="section-copy">How many configurations one approval runs on the same packet. One is a single run released automatically. More than one waits for you to choose which response reaches Claude.</p>
+              <div className="count-row" role="group" aria-label="Models at once">{Array.from({ length: runConfig.maxPanelConfigs }, (_, index) => index + 1).map((count) => <button key={count} type="button" className={`btn ${(configDraft.panel.length || 1) === count ? "primary" : ""}`} disabled={busy === "settings"} onClick={() => setConfigDraft({ ...configDraft, panel: count === 1 ? [] : runConfig.modelChoices.slice(0, count).map((model, index) => configDraft.panel[index] ? { ...configDraft.panel[index] } : { model, reasoning: configDraft.reasoning, protocolId: configDraft.protocolId }) })}>{count}</button>)}</div>
+              <p className="section-copy">Change the model in any slot below, or add a specific model, effort, and protocol combination.</p>
               <div className="panel-subhead"><strong>Comparison set</strong><span>{configDraft.panel.length ? `${configDraft.panel.length} of ${runConfig.maxPanelConfigs}` : "Off"}</span></div>
               <p className="section-copy">{configDraft.panel.length ? "Approving with candidates runs each configuration on the same packet, one after another. You then choose which response reaches Claude." : "Add a configuration to run several responses for one packet and choose between them before anything reaches Claude."}</p>
-              {configDraft.panel.length > 0 && <div className="panel-config-list">{configDraft.panel.map((entry, index) => <div className="panel-config" key={`${entry.model}:${entry.reasoning}:${entry.protocolId}:${index}`}><div><strong>{entry.model}</strong><span>{entry.reasoning} / {runConfig.protocols.find((protocol) => protocol.id === entry.protocolId)?.version || entry.protocolId}</span></div><button className="btn icon" type="button" title="Remove configuration" aria-label="Remove configuration" disabled={busy === "settings"} onClick={() => setConfigDraft({ ...configDraft, panel: configDraft.panel.filter((_, position) => position !== index) })}><Trash2 size={16} /></button></div>)}</div>}
+              {configDraft.panel.length > 0 && <div className="panel-config-list">{configDraft.panel.map((entry, index) => <div className="panel-config" key={`slot-${index}`}><div><select aria-label={`Model for slot ${index + 1}`} value={runConfig.modelChoices.includes(entry.model) ? entry.model : ""} disabled={busy === "settings"} onChange={(event) => setConfigDraft({ ...configDraft, panel: configDraft.panel.map((slot, position) => position === index ? { ...slot, model: event.target.value } : slot) })}>{!runConfig.modelChoices.includes(entry.model) && <option value="">{entry.model}</option>}{runConfig.modelChoices.map((model) => <option key={model} value={model}>{model}</option>)}</select><span>{entry.reasoning} / {runConfig.protocols.find((protocol) => protocol.id === entry.protocolId)?.version || entry.protocolId}</span></div><button className="btn icon" type="button" title="Remove configuration" aria-label="Remove configuration" disabled={busy === "settings"} onClick={() => setConfigDraft({ ...configDraft, panel: configDraft.panel.filter((_, position) => position !== index) })}><Trash2 size={16} /></button></div>)}</div>}
               <div className="toolbar"><button className="btn" type="button" disabled={configDraft.panel.length >= runConfig.maxPanelConfigs || !configDraft.model || busy === "settings"} onClick={() => setConfigDraft({ ...configDraft, panel: [...configDraft.panel, { model: configDraft.model, reasoning: configDraft.reasoning, protocolId: configDraft.protocolId }] })}><Plus size={16} /> Add the selection above</button>{configDraft.panel.length > 0 && <button className="btn" type="button" disabled={busy === "settings"} onClick={() => setConfigDraft({ ...configDraft, panel: [] })}><X size={16} /> Clear set</button>}</div>
               <div className="toolbar"><button className="btn primary" type="button" disabled={!configDirty || !configDraft.model || busy === "settings"} onClick={() => void saveRunConfig()}>{busy === "settings" ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Apply</button>{configDirty && <button className="btn" type="button" disabled={busy === "settings"} onClick={() => applySettingsView(runConfig)}><X size={16} /> Discard</button>}</div>
               <p className="section-copy run-config-note">A running review keeps the configuration it started with. A change applies to the next packet you approve, and every run records the model, effort, protocol version, and policy hash it used.</p>

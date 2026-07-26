@@ -183,12 +183,16 @@ The environment values `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` 
 
 ## Compare Several Responses And Choose One
 
+**Models at once** in the same panel sets how many configurations one approval runs on the same packet, from one to six. One is a single run released automatically. Choosing more fills the comparison set with that many models at the current effort and protocol, and each slot can then be pointed at any model.
+
 The same **Run configuration** panel holds a **comparison set** of up to six configurations. When the set is not empty, an approval offers **Approve with N candidates**:
 
 1. Each configuration reviews the same packet in its own isolated Sandbox, one after another.
 2. Nothing reaches Claude while the candidates run. The review waits in `AWAITING_SELECTION`.
 3. The phone shows every candidate with its model, protocol, outcome, transcript, and full response.
 4. **Release** sends exactly one candidate to Claude. **Release nothing** answers with the fixed terminal response.
+
+Before the individual responses, the screen shows the comparison itself: whether the answers agree, a table of model against verdict and confidence, and which packet sources each one actually used. Disagreement is visible without reading every response.
 
 Rules that this selection does not bend:
 
