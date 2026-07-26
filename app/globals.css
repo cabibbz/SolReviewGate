@@ -558,3 +558,6 @@ body { font-size: 1.0625rem; line-height: 1.5; }
 .evidence-overlap { display: grid; gap: 8px; }
 .evidence-overlap > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .evidence-overlap span { color: var(--muted); font-size: 0.8125rem; text-align: right; }
+.protocol-list .legacy-row { color: var(--muted); background: #fafbfa; }
+.protocol-list .legacy-row strong { color: var(--muted); }
+.protocol-list .legacy-row span { flex: 1 1 60%; text-align: right; }

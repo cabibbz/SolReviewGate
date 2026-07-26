@@ -177,6 +177,8 @@ The neutral control is a measuring instrument, not a working configuration. Use 
 
 `Legacy` is not a protocol and cannot be selected. It marks a review stored before protocol fingerprinting existed, so it carries no protocol version, policy hash, schema hash, or worker hash. `Legacy unclassified` is the same situation for an outcome code that predates outcome classification. Those records age out with retention, and every new run is fingerprinted.
 
+Because a run with no fingerprint cannot be attributed to any protocol, the lab excludes those runs from the release rate, the outcome counts, and the model against protocol matrix. They are reported separately under Protocol identity with the number of runs and why they are not comparable. A rate shown against `alignment-v1` and a rate shown against records with no protocol are answers to different questions, over different packets, and comparing them says nothing about either.
+
 **Apply** stores the selection on the server. A running review keeps the configuration it started with, so a change takes effect on the next packet you approve. Every run records the model, reasoning effort, protocol version, and policy hash it used, and the Alignment Lab groups outcomes by model and protocol version.
 
 The environment values `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` remain the deployment defaults for a deployment that has never been configured from the phone.
