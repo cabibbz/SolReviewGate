@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   TerminalSquare,
   Trash2,
   TriangleAlert,
@@ -105,6 +106,27 @@ interface CodexLogin {
   expiresAt?: number;
 }
 
+interface ReviewSettings {
+  model: string;
+  reasoning: string;
+  protocolId: string;
+}
+
+interface ReviewProtocolOption {
+  id: string;
+  version: string;
+  label: string;
+  summary: string;
+}
+
+interface ReviewSettingsView {
+  settings: ReviewSettings;
+  defaults: ReviewSettings;
+  modelChoices: string[];
+  reasoningChoices: string[];
+  protocols: ReviewProtocolOption[];
+}
+
 interface ClaudeClient {
   id: string;
   name: string;
@@ -116,6 +138,7 @@ interface ClaudeClient {
 const DB_NAME = "sol-gate-device";
 const STORE_NAME = "credentials";
 const terminalStates = new Set(["COMPLETE_REVIEW", "COMPLETE_OPAQUE", "REJECTED", "EXPIRED"]);
+const CUSTOM_MODEL = "__custom";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -352,6 +375,9 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
   const [stateFilter, setStateFilter] = useState("ALL");
   const [storage, setStorage] = useState<StorageSummary | null>(null);
   const [codexLogin, setCodexLogin] = useState<CodexLogin | null>(null);
+  const [runConfig, setRunConfig] = useState<ReviewSettingsView | null>(null);
+  const [configDraft, setConfigDraft] = useState<ReviewSettings | null>(null);
+  const [customModel, setCustomModel] = useState(false);
   const [clients, setClients] = useState<ClaudeClient[]>([]);
   const [clientsOpen, setClientsOpen] = useState(false);
   const [clientName, setClientName] = useState("");
@@ -400,6 +426,23 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
       setStorageLoaded(true);
     }
   }, [hasDeviceKey]);
+
+  const applySettingsView = useCallback((view: ReviewSettingsView) => {
+    setRunConfig(view);
+    setConfigDraft(view.settings);
+    setCustomModel(!view.modelChoices.includes(view.settings.model));
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    if (!hasDeviceKey) return;
+    try {
+      const response = await signedFetch("/api/admin/settings");
+      if (!response.ok) throw new Error("Run configuration is unavailable.");
+      applySettingsView((await response.json()) as ReviewSettingsView);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load the run configuration.");
+    }
+  }, [applySettingsView, hasDeviceKey]);
 
   const loadClients = useCallback(async () => {
     if (!hasDeviceKey) return;
@@ -454,10 +497,10 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
 
   useEffect(() => {
     if (!hasDeviceKey) return;
-    void Promise.all([loadJobs(), loadStorage(), loadClients()]);
+    void Promise.all([loadJobs(), loadStorage(), loadClients(), loadSettings()]);
     const timer = window.setInterval(() => void loadJobs(), 8_000);
     return () => window.clearInterval(timer);
-  }, [hasDeviceKey, loadClients, loadJobs, loadStorage]);
+  }, [hasDeviceKey, loadClients, loadJobs, loadSettings, loadStorage]);
 
   useEffect(() => {
     if (!selectedId || !hasDeviceKey) return;
@@ -541,6 +584,26 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
       setStorage((await response.json()) as StorageSummary);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Retention update failed.");
+    } finally { setBusy(""); }
+  };
+
+  const saveRunConfig = async () => {
+    if (!configDraft) return;
+    setBusy("settings"); setError("");
+    try {
+      const response = await signedFetch("/api/admin/settings", { method: "POST", body: JSON.stringify(configDraft) });
+      const data = (await response.json()) as ReviewSettingsView & { error?: string };
+      if (!response.ok) {
+        const messages: Record<string, string> = {
+          invalid_model: "That model name is not a valid Codex model id.",
+          invalid_reasoning: "That reasoning effort is not supported.",
+          invalid_protocol: "That alignment protocol is not available.",
+        };
+        throw new Error(messages[data.error || ""] || "The run configuration was not accepted.");
+      }
+      applySettingsView(data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The run configuration was not saved.");
     } finally { setBusy(""); }
   };
 
@@ -631,6 +694,9 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
   const unclassifiedRuns = Math.max(0, completedRuns.length - releasedRuns - modelWithheldRuns - wrapperBlockedRuns - systemFailureRuns);
   const releaseRate = completedRuns.length ? Math.round((releasedRuns / completedRuns.length) * 100) : 0;
   const protocolVersions = [...new Set(completedRuns.map((job) => job.protocolVersion).filter(Boolean))];
+  const activeProtocol = runConfig?.protocols.find((protocol) => protocol.id === runConfig.settings.protocolId) || null;
+  const draftProtocol = configDraft ? runConfig?.protocols.find((protocol) => protocol.id === configDraft.protocolId) || null : null;
+  const configDirty = Boolean(runConfig && configDraft && (configDraft.model !== runConfig.settings.model || configDraft.reasoning !== runConfig.settings.reasoning || configDraft.protocolId !== runConfig.settings.protocolId));
   const windowsInstaller = `$env:SOL_GATE_URL='${serviceOrigin}'; irm 'https://github.com/cabibbz/SolReviewGate/releases/latest/download/SolReviewSetup.ps1' | iex`;
 
   if (!health) return <main className="empty"><LoaderCircle className="spin" aria-label="Loading" /></main>;
@@ -657,6 +723,9 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
         <button className="btn icon" type="button" onClick={() => void Promise.all([loadJobs(), loadStorage(), loadClients(), selectedId ? loadDetail(selectedId) : Promise.resolve()])} title="Refresh" aria-label="Refresh"><RefreshCw size={16} /></button>
         {!health.codexConnected && codexLogin?.state !== "running" && codexLogin?.state !== "finalizing" && <button className="btn primary" type="button" onClick={() => void connectCodex()} disabled={busy === "codex"}><Link2 size={16} /> Connect Codex</button>}
         <button className="btn" type="button" onClick={() => { if (!clientsOpen) void loadClients(); setClientsOpen((value) => !value); setClientToken(""); }}><Plus size={16} /> Claude clients {clients.filter((client) => !client.revokedAt).length}</button>
+        {/* Native navigation keeps the run configuration reachable even if hydration fails on mobile. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        {runConfig && mainView !== "lab" && <a className="btn" href="/?view=lab"><SlidersHorizontal size={16} /> {runConfig.settings.model} · {activeProtocol?.label || runConfig.settings.protocolId}</a>}
       </div>
 
       {error && <p className="notice error">{error}</p>}
@@ -710,6 +779,21 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
         <div className="panel"><div className="panel-header"><h2>Encrypted storage</h2><span className="status-pill">{storage?.retentionDays || 0} days</span></div><div className="storage-metrics"><div><span>Retained reviews</span><strong>{storage?.jobs || 0}</strong></div><div><span>Packets</span><strong>{formatBytes(storage?.packetBytes)}</strong></div><div><span>Events</span><strong>{formatBytes(storage?.eventBytes)}</strong></div><div><span>Raw and results</span><strong>{formatBytes(storage?.rawBytes)}</strong></div><div><span>Total payload</span><strong>{formatBytes(storage?.totalBytes)}</strong></div></div><div className="retention-control"><label htmlFor="retention">Retention</label><select id="retention" value={storage?.retentionDays || 7} disabled={busy === "retention"} onChange={(event) => void updateRetention(Number(event.target.value))}><option value="1">1 day</option><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option></select></div></div>
         <div className="panel"><div className="panel-header"><h2>Retained reviews</h2><span className="status-pill">{jobs.length}</span></div>{jobs.length ? <div className="storage-list">{jobs.map((job) => <div className="storage-row" key={job.id}><div><strong>{stateLabel(job.state)}</strong><span>{new Date(job.createdAt).toLocaleString()} · {formatBytes(job.compressedBytes)}</span><code>{job.id}</code></div>{terminalStates.has(job.state) && <button className={`btn icon ${deleteConfirm === job.id ? "danger" : ""}`} title={deleteConfirm === job.id ? "Confirm delete" : "Delete review"} aria-label={deleteConfirm === job.id ? "Confirm delete" : "Delete review"} onClick={() => void removeJob(job.id)}><Trash2 size={16} /></button>}</div>)}</div> : <div className="empty compact"><div><Database size={25} /><p>No retained reviews.</p></div></div>}</div>
       </section>) : <section className="lab-view">
+        <div className="panel">
+          <div className="panel-header"><h2>Run configuration</h2><span className="status-pill"><SlidersHorizontal size={13} /> Next approval</span></div>
+          {runConfig && configDraft ? <>
+            <div className="run-config-facts"><div><span>Model</span><strong>{runConfig.settings.model}</strong></div><div><span>Reasoning</span><strong>{runConfig.settings.reasoning}</strong></div><div><span>Protocol</span><strong>{activeProtocol ? activeProtocol.version : runConfig.settings.protocolId}</strong></div></div>
+            <div className="run-config">
+              <div className="field"><label htmlFor="run-model">ChatGPT model</label><select id="run-model" value={customModel ? CUSTOM_MODEL : configDraft.model} disabled={busy === "settings"} onChange={(event) => { const value = event.target.value; if (value === CUSTOM_MODEL) { setCustomModel(true); return; } setCustomModel(false); setConfigDraft({ ...configDraft, model: value }); }}>{runConfig.modelChoices.map((model) => <option key={model} value={model}>{model}{model === runConfig.defaults.model ? " (deployment default)" : ""}</option>)}<option value={CUSTOM_MODEL}>Another model</option></select></div>
+              {customModel && <div className="field"><label htmlFor="run-model-custom">Model id</label><input id="run-model-custom" value={configDraft.model} maxLength={64} autoCapitalize="none" autoComplete="off" spellCheck={false} placeholder="gpt-5.6-codex" onChange={(event) => setConfigDraft({ ...configDraft, model: event.target.value.trim() })} /></div>}
+              <div className="field"><label htmlFor="run-reasoning">Reasoning effort</label><select id="run-reasoning" value={configDraft.reasoning} disabled={busy === "settings"} onChange={(event) => setConfigDraft({ ...configDraft, reasoning: event.target.value })}>{runConfig.reasoningChoices.map((effort) => <option key={effort} value={effort}>{effort}</option>)}</select></div>
+              <div className="field"><label htmlFor="run-protocol">Alignment protocol</label><select id="run-protocol" value={configDraft.protocolId} disabled={busy === "settings"} onChange={(event) => setConfigDraft({ ...configDraft, protocolId: event.target.value })}>{runConfig.protocols.map((protocol) => <option key={protocol.id} value={protocol.id}>{protocol.label}</option>)}</select></div>
+              {draftProtocol && <p className="section-copy">{draftProtocol.summary} Runs are recorded as <code>{draftProtocol.version}</code>.</p>}
+              <div className="toolbar"><button className="btn primary" type="button" disabled={!configDirty || !configDraft.model || busy === "settings"} onClick={() => void saveRunConfig()}>{busy === "settings" ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Apply</button>{configDirty && <button className="btn" type="button" disabled={busy === "settings"} onClick={() => applySettingsView(runConfig)}><X size={16} /> Discard</button>}</div>
+              <p className="section-copy run-config-note">A running review keeps the configuration it started with. A change applies to the next packet you approve, and every run records the model, effort, protocol version, and policy hash it used.</p>
+            </div>
+          </> : <div className="empty compact"><div><LoaderCircle className="spin" size={24} /><p>Loading the run configuration.</p></div></div>}
+        </div>
         <div className="panel"><div className="panel-header"><h2>Alignment outcomes</h2><span className="status-pill">{completedRuns.length} runs</span></div><div className="lab-metrics"><div><span>Release rate</span><strong>{releaseRate}%</strong></div><div><span>Released</span><strong>{releasedRuns}</strong></div><div><span>Model withheld</span><strong>{modelWithheldRuns}</strong></div><div><span>Wrapper blocked</span><strong>{wrapperBlockedRuns}</strong></div><div><span>System failure</span><strong>{systemFailureRuns}</strong></div><div><span>Unclassified</span><strong>{unclassifiedRuns}</strong></div></div></div>
         <div className="panel"><div className="panel-header"><h2>Protocol identity</h2><span className="status-pill">{protocolVersions.length || 0} versions</span></div><div className="protocol-list">{protocolVersions.length ? protocolVersions.map((version) => <div key={version}><strong>{version}</strong><span>{completedRuns.filter((job) => job.protocolVersion === version).length} runs</span></div>) : <div><strong>Legacy records</strong><span>No fingerprinted run has completed yet.</span></div>}</div></div>
         <div className="panel"><div className="panel-header"><h2>Recent classifications</h2><span className="status-pill">Phone only</span></div>{completedRuns.length ? <div className="lab-run-list">{completedRuns.map((job) => <div className="lab-run" key={job.id}><div><strong>{outcomeLabel(job.internalCode)}</strong><span>{new Date(job.createdAt).toLocaleString()} / {formatDuration(job.startedAt, job.completedAt)}</span><code>{job.protocolVersion || "legacy"} / p:{job.policyHash?.slice(0, 8) || "none"} / s:{job.schemaHash?.slice(0, 8) || "none"} / w:{job.workerHash?.slice(0, 8) || "none"}</code></div><span className={`state-badge state-${job.state.toLowerCase()}`}>{stateLabel(job.state)}</span></div>)}</div> : <div className="empty compact"><div><Activity size={25} /><p>No completed runs.</p></div></div>}</div>

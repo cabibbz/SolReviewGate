@@ -35,6 +35,14 @@ Treat a client token as sensitive. Create a separate named token per machine. Th
 
 The read only `/demo` route uses hard coded sample data and calls no private API. Public visitors to an already paired root PWA are directed to that demo and cannot register clients.
 
+## Run Configuration
+
+The reviewing model, reasoning effort, and alignment protocol are changed only through the phone signed admin API. An unsigned request cannot read or change them.
+
+The model id must match `^[A-Za-z0-9][A-Za-z0-9._:-]{1,63}$`, so it cannot begin with a dash or contain whitespace and cannot introduce an extra Codex command line flag. The reasoning effort is restricted to a fixed list because it is interpolated into a Codex configuration assignment. The protocol id selects a policy file through a server side catalog, never through a submitted path.
+
+The policy text, its SHA 256, the model, and the reasoning effort are recorded on the job and shown only in the paired PWA. Neither the protocol selection nor the policy is released to the reviewed client.
+
 ## Stored Data
 
 Review packets, event streams, raw candidates, and results are encrypted with AES 256 GCM before Redis storage. Ciphertext is bound to its logical key through authenticated additional data. Metadata needed for job indexing remains visible to the server store.

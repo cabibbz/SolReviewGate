@@ -5,6 +5,7 @@ import { config } from "@/lib/config";
 import { sha256 } from "@/lib/crypto";
 import { analyzeInternalReview, filterInternalReview, normalizeOutput, OPAQUE_OUTPUT } from "@/lib/gate";
 import { adminGetJob, adminLiveLog, appendJobEvents, readPacket, saveLiveLog, saveTerminalResult, transitionJob } from "@/lib/jobs";
+import { reviewRuntime } from "@/lib/settings";
 import { getStore, type Store } from "@/lib/store";
 import type { ReviewEvent, ReviewJob } from "@/lib/types";
 
@@ -340,13 +341,14 @@ export async function pollDeviceLogin(store: Store = getStore()): Promise<Device
 
 export async function startReview(id: string, store: Store = getStore()): Promise<void> {
   const approved = await transitionJob(id, ["AWAITING_APPROVAL"], "APPROVED", { approvedAt: Date.now() }, store);
+  const { settings, protocol } = await reviewRuntime(store);
   if (config.mockSandbox) {
-    const [policy, schema, worker] = await Promise.all([asset("review-policy.md"), asset("review-schema.json"), asset("worker.mjs")]);
+    const [policy, schema, worker] = await Promise.all([asset(protocol.file), asset("review-schema.json"), asset("worker.mjs")]);
     const running = await transitionJob(id, ["APPROVED"], "RUNNING", {
-      startedAt: Date.now(), sandboxCommandId: "mock-review", model: config.model, reasoning: config.reasoning, codexVersion: "mock",
-      protocolVersion: config.protocolVersion, policyHash: sha256(policy), schemaHash: sha256(schema), workerHash: sha256(worker),
+      startedAt: Date.now(), sandboxCommandId: "mock-review", model: settings.model, reasoning: settings.reasoning, codexVersion: "mock",
+      protocolVersion: protocol.version, policyHash: sha256(policy), schemaHash: sha256(schema), workerHash: sha256(worker),
     }, store);
-    await appendJobEvents(id, [{ id: "system:protocol", at: running.startedAt || running.updatedAt, source: "system", level: "info", title: "Review protocol locked", message: `${config.protocolVersion} / policy ${running.policyHash?.slice(0, 10)} / schema ${running.schemaHash?.slice(0, 10)} / worker ${running.workerHash?.slice(0, 10)}` }], store, jobTtl(running));
+    await appendJobEvents(id, [{ id: "system:protocol", at: running.startedAt || running.updatedAt, source: "system", level: "info", title: "Review protocol locked", message: `${protocol.version} / policy ${running.policyHash?.slice(0, 10)} / schema ${running.schemaHash?.slice(0, 10)} / worker ${running.workerHash?.slice(0, 10)}` }], store, jobTtl(running));
     return;
   }
   const base = await store.get<SandboxBase>(baseKey);
@@ -357,15 +359,15 @@ export async function startReview(id: string, store: Store = getStore()): Promis
   let sandbox: Sandbox | null = null;
   try {
     sandbox = await Sandbox.create({ source: { type: "snapshot", snapshotId: base.snapshotId }, timeout: 10 * 60 * 1000 });
-    const [packet, policy, schema, worker] = await Promise.all([readPacket(approved, store), asset("review-policy.md"), asset("review-schema.json"), asset("worker.mjs")]);
+    const [packet, policy, schema, worker] = await Promise.all([readPacket(approved, store), asset(protocol.file), asset("review-schema.json"), asset("worker.mjs")]);
     await writeRuntimeAssets(sandbox);
     await sandbox.fs.writeFile("/tmp/sol-review-packet.md", packet, { encoding: "utf8" });
     const command = await sandbox.runCommand({
       cmd: "node",
       args: ["/opt/solgate/worker.mjs", "/tmp/sol-review-packet.md"],
       env: {
-        SOL_MODEL: config.model,
-        SOL_REASONING: config.reasoning,
+        SOL_MODEL: settings.model,
+        SOL_REASONING: settings.reasoning,
         SOL_GATE_POLICY_BASE64: policy.toString("base64"),
       },
       detached: true,
@@ -373,10 +375,10 @@ export async function startReview(id: string, store: Store = getStore()): Promis
     const running = await transitionJob(id, ["APPROVED"], "RUNNING", {
       startedAt: Date.now(),
       sandboxCommandId: `${sandbox.sandboxId}:${command.cmdId}`,
-      model: config.model,
-      reasoning: config.reasoning,
+      model: settings.model,
+      reasoning: settings.reasoning,
       codexVersion: base.codexVersion,
-      protocolVersion: config.protocolVersion,
+      protocolVersion: protocol.version,
       policyHash: sha256(policy),
       schemaHash: sha256(schema),
       workerHash: sha256(worker),
@@ -387,7 +389,7 @@ export async function startReview(id: string, store: Store = getStore()): Promis
       source: "system",
       level: "info",
       title: "Review protocol locked",
-      message: `${config.protocolVersion} / policy ${running.policyHash?.slice(0, 10)} / schema ${running.schemaHash?.slice(0, 10)} / worker ${running.workerHash?.slice(0, 10)}`,
+      message: `${protocol.version} / policy ${running.policyHash?.slice(0, 10)} / schema ${running.schemaHash?.slice(0, 10)} / worker ${running.workerHash?.slice(0, 10)}`,
     }], store, jobTtl(running));
   } catch (error) {
     if (sandbox) await sandbox.stop({ blocking: false }).catch(() => undefined);

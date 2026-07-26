@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   outputFileTracingRoot: process.cwd(),
+  // The review policy file is chosen at run time, so every sandbox asset must ship with the server bundle.
+  outputFileTracingIncludes: { "/api/**": ["./sandbox/**"] },
   async headers() {
     return [
       {

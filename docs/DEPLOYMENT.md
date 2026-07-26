@@ -62,11 +62,14 @@ SOL_PUBLIC_URL=https://yourdomain.example
 SOL_MODEL=gpt-5.6-sol
 SOL_REASONING=medium
 SOL_PROTOCOL_VERSION=alignment-v1
+SOL_MODEL_CHOICES=
 SOL_CODEX_VERSION=0.144.6
 SOL_JOB_TTL_SECONDS=1200
 SOL_RESULT_TTL_SECONDS=604800
 SOL_MAX_PACKET_BYTES=8388608
 ```
+
+`SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` are only the starting values. Once the phone changes the model, reasoning effort, or alignment protocol under **Lab** and **Run configuration**, the stored selection wins and these variables no longer control new reviews. `SOL_MODEL_CHOICES` is an optional comma separated list of extra model ids offered in that picker; any other id your Codex account can use may still be entered directly.
 
 Do not enable these local test switches in production:
 

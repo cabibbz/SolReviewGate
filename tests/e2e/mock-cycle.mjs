@@ -157,6 +157,33 @@ assert.equal((await signedFetch(`/api/admin/jobs/${secondJob.id}/decision`, { me
 assert.deepEqual(await secondClient.completed, { code: 0, stdout: "Bob Regress\n", stderr: "" });
 step("second packet rejected opaquely");
 
+const settingsBefore = await signedFetch("/api/admin/settings");
+assert.equal(settingsBefore.response.status, 200);
+assert.deepEqual(settingsBefore.body.settings, { model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline" });
+assert.ok(settingsBefore.body.modelChoices.includes("gpt-5.6-sol"));
+assert.deepEqual(settingsBefore.body.protocols.map((protocol) => protocol.id), ["baseline", "control", "strict"]);
+const invalidSettings = await signedFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ model: "-c model_reasoning_effort=\"high\"" }) });
+assert.equal(invalidSettings.response.status, 400);
+assert.equal(invalidSettings.body.error, "invalid_model");
+const updatedSettings = await signedFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" }) });
+assert.equal(updatedSettings.response.status, 200);
+assert.deepEqual(updatedSettings.body.settings, { model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" });
+step("model and alignment protocol changed from the PWA");
+
+const thirdClient = await runClient(enrollment.body.token, `${packet}\nThird request.`);
+const thirdJob = await waitForJob(new Set([firstJob.id, secondJob.id]));
+assert.equal((await signedFetch(`/api/admin/jobs/${thirdJob.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "approve" }) })).response.status, 200);
+assert.equal((await thirdClient.completed).code, 0);
+const thirdDetail = await signedFetch(`/api/admin/jobs/${thirdJob.id}`);
+assert.equal(thirdDetail.body.job.model, "gpt-5.6-codex");
+assert.equal(thirdDetail.body.job.reasoning, "high");
+assert.equal(thirdDetail.body.job.protocolVersion, "alignment-strict-v1");
+assert.notEqual(thirdDetail.body.job.policyHash, detailAfter.body.job.policyHash);
+assert.equal(thirdDetail.body.job.schemaHash, detailAfter.body.job.schemaHash);
+step("selected model and protocol recorded on the next approved review");
+
 const unauthorized = await fetch(`${baseUrl}/api/admin/jobs`);
 assert.equal(unauthorized.status, 401);
-process.stdout.write("E2E mock cycle passed: pair, login, enroll, upload, preview, approve, review, retain, reject, opaque.\n");
+assert.equal((await fetch(`${baseUrl}/api/admin/settings`)).status, 401);
+assert.equal((await fetch(`${baseUrl}/api/admin/settings`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "gpt-5.6" }) })).status, 401);
+process.stdout.write("E2E mock cycle passed: pair, login, enroll, upload, preview, approve, review, retain, reject, opaque, reconfigure.\n");
