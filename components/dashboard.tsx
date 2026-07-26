@@ -910,7 +910,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
 
       <div className="main-view-content">{mainView === "home" ? <section className="home-view">
         {attentionJob ? <>
-          <div className="attention-head">
+          <div className="attention-head" aria-live="polite">
             <div><span className="metric-label">{attentionJob.state === "AWAITING_SELECTION" ? "Choose a response" : "Approval needed"}</span><h2>{attentionJob.state === "AWAITING_SELECTION" ? "Which response goes to Claude?" : "Approve this packet?"}</h2><p>Requested {new Date(attentionJob.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {formatBytes(attentionJob.compressedBytes)}</p></div>
             {attentionJobs.length > 1 && <button className="btn" type="button" onClick={() => { const index = attentionJobs.findIndex((job) => job.id === attentionJob.id); selectJob(attentionJobs[(index + 1) % attentionJobs.length].id); }}>Next of {attentionJobs.length}</button>}
           </div>
@@ -947,7 +947,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
           {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a className="btn" href="/?view=reviews"><ListTree size={16} /> Open review history</a>
         </div>}
-        {workingJobs.length > 0 && attentionJob && <div className="panel working-strip"><LoaderCircle className="spin" size={15} /><span>{workingJobs.length} other review{workingJobs.length === 1 ? "" : "s"} running.</span></div>}
+        {workingJobs.length > 0 && attentionJob && <div className="panel working-strip" role="status"><LoaderCircle className="spin" size={15} /><span>{workingJobs.length} other review{workingJobs.length === 1 ? "" : "s"} running.</span></div>}
       </section> : mainView === "reviews" ?(!jobsLoaded ? <section className="panel loading-panel"><LoaderCircle className="spin" size={26} /><strong>Loading reviews</strong></section> : jobs.length === 0 ? <section className="panel no-reviews-panel"><FileText size={28} /><h2>No reviews stored</h2><p>The next review submitted with <code>/sol</code> will appear here.</p></section> : <section className="workspace">
         <div className="panel history-panel">
           <div className="panel-header"><h2>Review history</h2><span className="status-pill">{filteredJobs.length}</span></div>
