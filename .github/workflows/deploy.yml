@@ -1,0 +1,97 @@
+name: Deploy
+
+# Deploys production from GitHub, so a release never depends on a local clone.
+# Runs on every push to main, and on demand from the Actions tab or the API.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployment credentials
+        id: creds
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Explain a missing configuration
+        if: steps.creds.outputs.ready != 'true'
+        run: |
+          {
+            echo "### Deployment skipped"
+            echo
+            echo "Add these repository secrets to deploy production from GitHub:"
+            echo
+            echo "| Secret | Where it comes from |"
+            echo "| --- | --- |"
+            echo "| \`VERCEL_TOKEN\` | Vercel account settings, Tokens |"
+            echo "| \`VERCEL_ORG_ID\` | Vercel project settings, General |"
+            echo "| \`VERCEL_PROJECT_ID\` | Vercel project settings, General |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v7
+        if: steps.creds.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v7
+        if: steps.creds.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        if: steps.creds.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Verify
+        if: steps.creds.outputs.ready == 'true'
+        run: npm run verify
+
+      - name: Build for production
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          # Stamps the deployed commit into the build so the PWA can report it.
+          NEXT_PUBLIC_SOL_BUILD: ${{ github.sha }}
+        run: |
+          npx --yes vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN"
+          npx --yes vercel@latest build --prod --token "$VERCEL_TOKEN"
+
+      - name: Deploy to production
+        id: deploy
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          url="$(npx --yes vercel@latest deploy --prebuilt --prod --token "$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Deployed"
+            echo
+            echo "- Commit: \`${GITHUB_SHA:0:7}\`"
+            echo "- Deployment: $url"
+            echo
+            echo "Check the running build from a phone at \`/api/health\`."
+          } >> "$GITHUB_STEP_SUMMARY"
