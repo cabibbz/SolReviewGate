@@ -4,6 +4,9 @@
 
 ### Added
 
+* Decision first phone layout: the PWA opens on the packet or response that is waiting, with history, lab, storage, and clients behind one menu
+* Packet reading, technical records, and full candidate responses collapse behind disclosures on the phone
+* Running build identifier in `/api/health` and in the PWA menu, so the deployed version is visible from the phone
 * Run configuration panel in the PWA Lab view for the reviewing model, reasoning effort, and alignment protocol
 * Signed `/api/admin/settings` route that reads and stores the review configuration
 * Selectable alignment protocols: baseline, a neutral control with no disposition guidance, and a strict citation protocol
