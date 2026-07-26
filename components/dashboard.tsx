@@ -907,6 +907,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   const parallelAnswer = parallelJob ? parseParallelAnswer(shownRaw) : null;
   const shownEvents = viewingCandidate ? candidateDetail?.events || [] : events;
   const candidateComparison = comparison(candidates);
+  const comparisonReady = (runConfig?.settings.panel.length || 0) > 1;
   const awaitingSelection = detail?.job.state === "AWAITING_SELECTION";
   const canRunAgain = Boolean(detail && (awaitingSelection || detail.job.state === "COMPLETE_REVIEW" || detail.job.state === "COMPLETE_OPAQUE"));
   const lastEvent = events.length ? events[events.length - 1] : undefined;
@@ -1006,7 +1007,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
               <details className="disclosure"><summary>Technical details</summary><div className="detail-rows"><div><span>Review</span><code>{detail.job.id}</code></div><div><span>Packet hash</span><code>{detail.job.packetHash.slice(0, 24)}</code></div><div><span>Configuration</span><code>{runConfig ? `${runConfig.settings.model} / ${runConfig.settings.reasoning} / ${activeProtocol?.version || runConfig.settings.protocolId}` : "Loading"}</code></div><div><span>Expires</span><code>{new Date(detail.job.expiresAt).toLocaleString()}</code></div></div></details>
             </div>
             {runConfig && <div className="panel decision-plan">{runConfig.settings.panel.length > 1 ? <>
-              <strong>Approving runs {runConfig.settings.panel.length} responses on this one packet.</strong>
+              <strong>Approving runs {runConfig.settings.panel.length} responses on this one packet, and you choose which one Claude gets.</strong>
               <ul>{runConfig.settings.panel.map((entry, index) => <li key={`plan-${index}`}>{entry.model} · {entry.reasoning} · {runConfig.protocols.find((protocol) => protocol.id === entry.protocolId)?.version || entry.protocolId}</li>)}</ul>
               <span>They run one after another. Nothing reaches Claude until you choose one of them.</span>
             </> : <>
@@ -1015,9 +1016,12 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
               {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
               <a href="/?view=lab">Run several models and choose between them</a>
             </>}</div>}
+            {/* With a set configured the comparison is the primary action, because that is what was asked for. */}
             <div className="action-bar">
-              <button className="btn primary big" type="button" onClick={() => void decision("approve")} disabled={Boolean(busy)}>{busy === "approve" ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />} Approve</button>
-              {Boolean(runConfig?.settings.panel.length) && <button className="btn big" type="button" onClick={() => void decision("approve_panel")} disabled={Boolean(busy)}>{busy === "approve_panel" ? <LoaderCircle className="spin" size={17} /> : <Layers size={17} />} Approve with {runConfig?.settings.panel.length} candidates</button>}
+              {comparisonReady
+                ? <><button className="btn primary big" type="button" onClick={() => void decision("approve_panel")} disabled={Boolean(busy)}>{busy === "approve_panel" ? <LoaderCircle className="spin" size={17} /> : <Layers size={17} />} Approve and run {runConfig?.settings.panel.length} responses</button>
+                  <button className="btn big" type="button" onClick={() => void decision("approve")} disabled={Boolean(busy)}>{busy === "approve" ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />} Approve one review instead</button></>
+                : <button className="btn primary big" type="button" onClick={() => void decision("approve")} disabled={Boolean(busy)}>{busy === "approve" ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />} Approve</button>}
               <button className="btn danger big" type="button" onClick={() => void decision("reject")} disabled={Boolean(busy)}><X size={17} /> Reject</button>
             </div>
           </> : <>

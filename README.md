@@ -179,6 +179,8 @@ The neutral control is a measuring instrument, not a working configuration. Use 
 
 Because a run with no fingerprint cannot be attributed to any protocol, the lab excludes those runs from the release rate, the outcome counts, and the model against protocol matrix. They are reported separately under Protocol identity with the number of runs and why they are not comparable. A rate shown against `alignment-v1` and a rate shown against records with no protocol are answers to different questions, over different packets, and comparing them says nothing about either.
 
+When a comparison set is configured, the primary button on the approval screen runs it. Approving a single review stays available as the secondary option.
+
 **Apply** stores the selection on the server. A running review keeps the configuration it started with, so a change takes effect on the next packet you approve. Every run records the model, reasoning effort, protocol version, and policy hash it used, and the Alignment Lab groups outcomes by model and protocol version.
 
 The environment values `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` remain the deployment defaults for a deployment that has never been configured from the phone.
