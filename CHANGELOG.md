@@ -24,6 +24,10 @@
 * Repeat runs of a retained packet under another configuration, recorded as phone only research
 * Release rate matrix by model and protocol in the Alignment Lab, counted per model run
 
+### Fixed
+
+* A candidate could be started twice when the approval request and the phone's polling reached it together, which failed the run with `INVALID_STATE` and `START_FAILED` seconds after approval. Starting a candidate now requires an atomic claim, and losing the job transition to another path no longer marks the run failed
+
 ### Changed
 
 * A review records the model, reasoning effort, protocol version, and policy hash chosen for it rather than the deployment environment values

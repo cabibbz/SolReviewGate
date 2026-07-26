@@ -164,6 +164,14 @@ export async function createCandidate(
   });
 }
 
+/**
+ * Claims a candidate for execution. The approval request and the phone's polling can both reach a
+ * queued candidate, and starting one is slow, so the claim is what makes a start happen once.
+ */
+export async function claimCandidate(id: string, candidateId: string, store: Store = getStore()): Promise<boolean> {
+  return store.setIfAbsent(`${candidateKey(id, candidateId)}:claim`, true, 15 * 60);
+}
+
 export async function updateCandidate(id: string, candidateId: string, patch: Partial<ReviewCandidate>, store: Store = getStore()): Promise<ReviewCandidate> {
   const job = await store.get<ReviewJob>(jobKey(id));
   const candidate = await getCandidate(id, candidateId, store);
@@ -578,6 +586,7 @@ export async function deleteJob(id: string, store: Store = getStore()): Promise<
     candidateListKey(id), `${candidateListKey(id)}:lock`,
     ...candidates.flatMap((candidate) => [
       candidateKey(id, candidate.id),
+      `${candidateKey(id, candidate.id)}:claim`,
       candidateOutputKey(id, candidate.id),
       candidateRawKey(id, candidate.id),
       candidateLiveKey(id, candidate.id),
