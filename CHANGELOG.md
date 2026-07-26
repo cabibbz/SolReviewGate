@@ -7,6 +7,7 @@
 * `/solute` submits the request Claude was given for an independent parallel answer that runs without approval, returns nothing to the session, and is readable only in the PWA
 * Answering policy and output schema for parallel packets, separate from the review policy
 * Runs recorded before protocol fingerprinting are excluded from lab statistics and reported separately, so a protocol is never compared against records that have no protocol
+* Approval screen states what approving will do: one review released automatically, or the named configurations that will run with a choice to follow, with a link to set up several models when none are configured
 * Comparison summary on the selection screen: agreement across candidates, a model against verdict and confidence table, and which sources each candidate cited
 * `Models at once` control that sets how many configurations one approval runs, and a model picker on each comparison slot
 * Decision first phone layout: the PWA opens on the packet or response that is waiting, with history, lab, storage, and clients behind one menu
