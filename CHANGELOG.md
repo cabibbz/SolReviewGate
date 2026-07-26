@@ -27,6 +27,10 @@
 
 ### Fixed
 
+* The suggested model list contained ids the Codex CLI does not accept, including `gpt-5.6` and `gpt-5.6-codex`. It now lists the real ids: `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, and `gpt-5.2-codex`
+* A model the Codex CLI cannot resolve is now recorded as `MODEL_UNAVAILABLE` and shown as "Model not available to this account", instead of a generic worker rejection
+* Every comparison slot now has its own protocol and reasoning effort picker, so changing the active protocol no longer leaves existing slots on the protocol they were created with, with `Match protocol and effort above` to align them in one tap
+
 * A candidate could be started twice when the approval request and the phone's polling reached it together, which failed the run with `INVALID_STATE` and `START_FAILED` seconds after approval. Starting a candidate now requires an atomic claim, and losing the job transition to another path no longer marks the run failed
 
 ### Changed

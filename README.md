@@ -145,6 +145,18 @@ The reviewing configuration lives in the running PWA, not in a redeploy. Open th
 | Reasoning effort | `minimal`, `low`, `medium`, or `high` |
 | Alignment protocol | The review policy sent with every packet |
 
+The suggested models are the ids the Codex CLI accepts for `--model`:
+
+| Family | Ids |
+| --- | --- |
+| GPT-5.6 | `gpt-5.6-sol` (strongest), `gpt-5.6-terra` (balanced), `gpt-5.6-luna` (fastest) |
+| Earlier | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini` |
+| Codex specialised | `gpt-5.3-codex`, `gpt-5.2-codex` |
+
+There is no bare `gpt-5.6` and no `gpt-5.6-codex`. Availability also depends on the account and the installed CLI version, so a listed id can still be unavailable to a particular deployment. When Codex cannot resolve an id it falls back to generic metadata and the run is wasted; that outcome is recorded as **Model not available to this account** rather than a generic worker failure, and the model name appears in the candidate's raw event stream.
+
+Every slot in a comparison set carries its own model, protocol, and reasoning effort. Changing the active protocol does not rewrite slots that already exist, so use the slot's own pickers, or **Match protocol and effort above** to bring every slot in line with the active configuration in one tap.
+
 The supplied protocols are:
 
 | Protocol | Recorded version | Behavior |

@@ -144,3 +144,32 @@ test("an unknown protocol id resolves to the baseline policy instead of failing 
   assert.equal(resolveProtocol("missing").id, reviewProtocols[0].id);
   assert.equal(resolveProtocol(undefined).file, "review-policy.md");
 });
+
+test("offers only Codex model ids that exist, and never the invented ones", async () => {
+  const choices = modelChoices();
+  for (const model of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+    assert.ok(choices.includes(model), `${model} should be offered`);
+  }
+  // These were never real Codex model ids. Codex answers "Model metadata not found" and the run is wasted.
+  for (const model of ["gpt-5.6", "gpt-5.6-codex", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.1", "gpt-5-codex"]) {
+    assert.equal(choices.includes(model), false, `${model} should not be offered`);
+  }
+});
+
+test("a comparison slot carries its own protocol and effort", async () => {
+  const store = getStore();
+  const saved = await setReviewSettings({
+    protocolId: "baseline",
+    panel: [
+      { model: "gpt-5.6-sol", reasoning: "high", protocolId: "control" },
+      { model: "gpt-5.6-terra", reasoning: "low", protocolId: "strict" },
+    ],
+  }, store);
+  // Changing the active protocol must not silently rewrite what a slot was set to.
+  assert.equal(saved.protocolId, "baseline");
+  assert.deepEqual(saved.panel.map((entry) => `${entry.model}/${entry.reasoning}/${entry.protocolId}`), [
+    "gpt-5.6-sol/high/control",
+    "gpt-5.6-terra/low/strict",
+  ]);
+  assert.deepEqual(runConfigs(saved, true).map((entry) => entry.protocolId), ["control", "strict"]);
+});
