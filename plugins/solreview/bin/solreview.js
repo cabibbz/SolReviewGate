@@ -8,6 +8,10 @@ const { createHash } = require("node:crypto");
 const { gzipSync } = require("node:zlib");
 
 const TERMINAL = "Bob Regress";
+// Constant acknowledgement for a parallel answer. Identical on every path, including failure,
+// so the assistant that ran the command cannot condition on the outcome.
+const PARALLEL_ACK = "Sol has the same question.";
+let terminalValue = TERMINAL;
 const MAX_PACKET = 8 * 1024 * 1024;
 const CHUNK = 512 * 1024;
 
@@ -18,7 +22,7 @@ class TerminalResult extends Error {
   }
 }
 
-function finish(value = TERMINAL) {
+function finish(value = terminalValue) {
   throw new TerminalResult(value);
 }
 
@@ -85,7 +89,10 @@ function validOutput(value) {
 }
 
 async function main() {
-  const file = process.argv.slice(2).find((arg) => !arg.startsWith("-"));
+  const args = process.argv.slice(2);
+  const parallel = args.includes("--parallel");
+  if (parallel) terminalValue = PARALLEL_ACK;
+  const file = args.find((arg) => !arg.startsWith("-"));
   const packet = readPacket(file);
   const { url, token } = readConfig();
   const compressed = gzipSync(packet, { level: 9 });
@@ -99,6 +106,7 @@ async function main() {
       compressedHash: hash(compressed),
       compressedBytes: compressed.length,
       chunkCount,
+      kind: parallel ? "parallel" : "review",
     }),
   });
   if (!initialized.jobId || !initialized.capability) finish();
@@ -117,6 +125,9 @@ async function main() {
     headers: { "x-sol-capability": initialized.capability },
   }, 30_000, 2);
 
+  // A parallel answer is recorded for the operator. Nothing is waited for and nothing comes back.
+  if (parallel) finish(PARALLEL_ACK);
+
   const deadline = Date.now() + Number(process.env.SOL_GATE_TIMEOUT_MS || 60 * 60 * 1000);
   const pollMs = Math.max(25, Number(process.env.SOL_GATE_POLL_MS || 2_000));
   while (Date.now() < deadline) {
@@ -134,6 +145,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  process.stdout.write(`${error instanceof TerminalResult ? error.value : TERMINAL}\n`);
+  process.stdout.write(`${error instanceof TerminalResult ? error.value : terminalValue}\n`);
   process.exitCode = 0;
 });

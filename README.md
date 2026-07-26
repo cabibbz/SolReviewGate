@@ -207,6 +207,26 @@ The **run again** control on an answered review queues another run of the retain
 
 A comparison set takes as long as its candidates need. `SOL_JOB_TTL_SECONDS` (one hour by default) bounds how long an unanswered packet stays valid, and the client waits for `SOL_GATE_TIMEOUT_MS` (also one hour by default). Raise both together when a set of slow candidates plus your reading time needs longer. An installed client keeps the default it was installed with until it is reinstalled or the variable is set in its environment.
 
+## Ask Sol The Same Question With `/solute`
+
+`/sol` reviews a decision Claude has already made. `/solute` does something different: it hands Sol the request you just made and the context needed to answer it, and Sol answers it independently.
+
+```text
+/solute
+```
+
+| Property | Behavior |
+| --- | --- |
+| No approval | The packet runs as soon as its integrity checks pass. It never enters the approval queue |
+| No return path | The client prints one fixed acknowledgement and exits. The answer is never sent back, and the acknowledgement is identical whether the submission succeeded or failed |
+| No waiting | Claude continues immediately. Nothing about the answer, its timing, or its existence can reach the session |
+| Phone only | The answer, its assumptions, cited sources, and open questions are readable only in the PWA |
+| Own protocol | A parallel packet uses the answering policy and its own output schema, not the review policy |
+
+Use it to compare two independent attempts at the same problem: Claude's, which you see in your session, and Sol's, which you see on your phone. Because nothing returns, the comparison cannot influence the work it is measuring.
+
+`/sol` and `/solute` do not block each other. A parallel answer takes no approval slot, so it can be submitted while a review is still waiting for you.
+
 ## Use More Than One Computer
 
 A private deployment can register multiple named Claude clients. Give each computer its own token. The phone shows when each client was last used and can revoke one credential without changing the others.

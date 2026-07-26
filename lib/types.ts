@@ -47,8 +47,13 @@ export interface ReviewCandidate {
   postRelease?: boolean;
 }
 
+export const jobKinds = ["review", "parallel"] as const;
+export type JobKind = (typeof jobKinds)[number];
+
 export interface ReviewJob {
   id: string;
+  /** `parallel` answers the same question independently and never reaches the client. */
+  kind?: JobKind;
   clientId: string;
   clientTokenHash: string;
   packetHash: string;

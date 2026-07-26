@@ -94,6 +94,20 @@ The reviewing model, the reasoning effort, and the alignment protocol are runtim
 
 `startReview` resolves the configuration once, at approval, and passes it to the fresh Sandbox. A running review therefore keeps the configuration it started with, and a change applies to the next approved packet.
 
+## Parallel Answers
+
+A `/solute` packet creates a job of kind `parallel`. It is the same transport, storage, isolation, and worker as a review, with three differences.
+
+| Stage | Review | Parallel answer |
+| --- | --- | --- |
+| After commit | Enters the approval queue and waits for the phone | Starts immediately |
+| Prompt and schema | `review-policy.md` and `review-schema.json` | `answer-policy.md` and `answer-schema.json` |
+| Terminal path | The release gate decides what the client receives | Recorded as `ANSWER_RECORDED`, never released. `clientResult` returns the fixed terminal response for a parallel job regardless of the answer |
+
+The client exits after commit without polling, and prints one constant acknowledgement on every path including failure, so no property of the answer is observable from the session that produced the request.
+
+A parallel job takes no per client outstanding slot, so it neither blocks nor is blocked by a review awaiting approval, and completing one never clears the slot held by a waiting review.
+
 ## Comparison Candidates
 
 One approval creates one candidate per configuration. A candidate is a complete execution of the packet: its own Sandbox, its own policy, its own release gate result, and its own retained transcript, response, and outcome code.

@@ -6,6 +6,7 @@ const packetPath = process.argv[2];
 const model = process.env.SOL_MODEL || "gpt-5.6-sol";
 const reasoning = process.env.SOL_REASONING || "medium";
 const policy = Buffer.from(process.env.SOL_GATE_POLICY_BASE64 || "", "base64").toString("utf8");
+const outputSchema = /^\/opt\/solgate\/[a-z-]+\.json$/.test(process.env.SOL_OUTPUT_SCHEMA || "") ? process.env.SOL_OUTPUT_SCHEMA : "/opt/solgate/review-schema.json";
 
 function redact(value, secrets) {
   let output = String(value || "");
@@ -52,7 +53,7 @@ const args = [
   "-c", "approval_policy=\"never\"",
   "--sandbox", "read-only",
   "--skip-git-repo-check",
-  "--output-schema", "/opt/solgate/review-schema.json",
+  "--output-schema", outputSchema,
   "-",
 ];
 

@@ -41,6 +41,7 @@ interface Health {
 
 interface Job {
   id: string;
+  kind?: "review" | "parallel";
   packetHash: string;
   compressedBytes: number;
   state: string;
@@ -248,7 +249,8 @@ async function signedFetch(path: string, init: RequestInit = {}): Promise<Respon
   return fetch(path, { ...init, headers, cache: "no-store" });
 }
 
-function stateLabel(state: string): string {
+function stateLabel(state: string, kind?: string): string {
+  if (kind === "parallel") return state.startsWith("COMPLETE") ? "Answered" : state.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
   if (state === "COMPLETE_OPAQUE") return "Not released";
   return state.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -267,6 +269,7 @@ function outcomeLabel(code?: string): string {
     POLL_FAILED: "Runtime failure",
     AUTH_UNAVAILABLE: "Authentication unavailable",
     OPERATOR_WITHHELD: "Operator released nothing",
+    ANSWER_RECORDED: "Answer recorded",
     FILTERED: "Legacy unclassified",
     MOCK: "Mock run",
   };
@@ -397,6 +400,34 @@ function parseCodexResponse(value: string | null): ReadableResult | null {
     // Provider diagnostics and malformed candidates are still useful as plain text.
   }
   return { verdict: "Codex response", assessment: readableValue(value), recommendations: [], released: false };
+}
+
+interface ParallelAnswer {
+  answer: string;
+  approach: string;
+  confidence: string;
+  assumptions: string[];
+  evidence: string[];
+  openQuestions: string[];
+}
+
+function parseParallelAnswer(value: string | null): ParallelAnswer | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (typeof parsed.answer !== "string" || !parsed.answer.trim()) return null;
+    const list = (item: unknown) => Array.isArray(item) ? item.map((entry) => readableValue(entry)).filter(Boolean) : [];
+    return {
+      answer: parsed.answer,
+      approach: readableValue(parsed.approach),
+      confidence: readableValue(parsed.confidence),
+      assumptions: list(parsed.assumptions),
+      evidence: list(parsed.evidenceCited),
+      openQuestions: list(parsed.openQuestions),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function ResultCard({ result, phoneOnly = false }: { result: ReadableResult; phoneOnly?: boolean }) {
@@ -581,8 +612,9 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   // On the decision screen the loaded review always follows the item that needs an answer.
   useEffect(() => {
     if (initialView !== "home" || !hasDeviceKey) return;
-    const next = jobs.filter((job) => job.state === "AWAITING_APPROVAL" || job.state === "AWAITING_SELECTION").sort((left, right) => left.createdAt - right.createdAt)[0];
-    if (next) setSelectedId((current) => (current && jobs.some((job) => job.id === current && (job.state === "AWAITING_APPROVAL" || job.state === "AWAITING_SELECTION")) ? current : next.id));
+    const waiting = (job: Job) => job.kind !== "parallel" && (job.state === "AWAITING_APPROVAL" || job.state === "AWAITING_SELECTION");
+    const next = jobs.filter(waiting).sort((left, right) => left.createdAt - right.createdAt)[0];
+    if (next) setSelectedId((current) => (current && jobs.some((job) => job.id === current && waiting(job)) ? current : next.id));
   }, [hasDeviceKey, initialView, jobs]);
 
   const candidates = useMemo(() => detail?.candidates || [], [detail]);
@@ -809,7 +841,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   }), [jobs, search, stateFilter]);
   // The phone opens on whatever is actually waiting for a decision, oldest first.
   const attentionJobs = jobs
-    .filter((job) => job.state === "AWAITING_APPROVAL" || job.state === "AWAITING_SELECTION")
+    .filter((job) => job.kind !== "parallel" && (job.state === "AWAITING_APPROVAL" || job.state === "AWAITING_SELECTION"))
     .sort((left, right) => left.createdAt - right.createdAt);
   const attentionJob = attentionJobs.find((job) => job.id === selectedId) || attentionJobs[0] || null;
   const workingJobs = jobs.filter((job) => job.state === "RUNNING" || job.state === "APPROVED");
@@ -824,9 +856,11 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   const shownRaw = viewingCandidate ? candidateDetail?.raw ?? null : detail?.raw ?? null;
   const shownLive = viewingCandidate ? candidateDetail?.live ?? null : detail?.live ?? null;
   const readableResult = parseResult(shownResult);
-  const privateCodexResponse = shownResult === "Bob Regress" || (viewingCandidate && viewedCandidate?.releasable === false)
+  const parallelJob = detail?.job.kind === "parallel";
+  const privateCodexResponse = !parallelJob && (shownResult === "Bob Regress" || (viewingCandidate && viewedCandidate?.releasable === false))
     ? parseCodexResponse(shownRaw)
     : null;
+  const parallelAnswer = parallelJob ? parseParallelAnswer(shownRaw) : null;
   const shownEvents = viewingCandidate ? candidateDetail?.events || [] : events;
   const awaitingSelection = detail?.job.state === "AWAITING_SELECTION";
   const canRunAgain = Boolean(detail && (awaitingSelection || detail.job.state === "COMPLETE_REVIEW" || detail.job.state === "COMPLETE_OPAQUE"));
@@ -952,11 +986,11 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
         <div className="panel history-panel">
           <div className="panel-header"><h2>Review history</h2><span className="status-pill">{filteredJobs.length}</span></div>
           <div className="history-filters"><label className="search-field"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search reviews" aria-label="Search reviews" /></label><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} aria-label="Filter review state"><option value="ALL">All states</option><option value="AWAITING_APPROVAL">Pending approval</option><option value="RUNNING">Running</option><option value="COMPLETE_REVIEW">Complete review</option><option value="COMPLETE_OPAQUE">Not released</option><option value="REJECTED">Rejected</option></select></div>
-          {filteredJobs.length ? <ul className="job-list">{filteredJobs.map((job) => <li key={job.id}><button className={`job-button ${selectedId === job.id ? "active" : ""}`} onClick={() => selectJob(job.id)}><span className="job-row"><span className="job-id">{job.id}</span><span className={`state-badge state-${job.state.toLowerCase()}`}>{stateLabel(job.state)}</span></span><span className="job-meta">{new Date(job.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {formatBytes(job.compressedBytes)}</span></button></li>)}</ul> : <div className="empty compact"><div><Check size={26} /><p>No matching reviews.</p></div></div>}
+          {filteredJobs.length ? <ul className="job-list">{filteredJobs.map((job) => <li key={job.id}><button className={`job-button ${selectedId === job.id ? "active" : ""}`} onClick={() => selectJob(job.id)}><span className="job-row"><span className="job-id">{job.id}</span><span className={`state-badge state-${job.state.toLowerCase()}`}>{stateLabel(job.state, job.kind)}</span></span><span className="job-meta">{job.kind === "parallel" ? "Parallel answer · " : ""}{new Date(job.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {formatBytes(job.compressedBytes)}</span></button></li>)}</ul> : <div className="empty compact"><div><Check size={26} /><p>No matching reviews.</p></div></div>}
         </div>
 
         <div className="panel detail-panel" ref={detailPanelRef}>
-          <div className="panel-header"><h2>Review detail</h2>{detail && <div className="header-actions"><span className={`state-badge state-${detail.job.state.toLowerCase()}`}>{stateLabel(detail.job.state)}</span>{canRunAgain && <button className="btn icon" title="Run this packet again with the current configuration" aria-label="Run this packet again with the current configuration" onClick={() => void runAgain()} disabled={busy === "rerun" || candidateRunning}>{busy === "rerun" ? <LoaderCircle className="spin" size={16} /> : <Repeat2 size={16} />}</button>}{terminalStates.has(detail.job.state) && <button className={`btn icon ${deleteConfirm === detail.job.id ? "danger" : ""}`} title={deleteConfirm === detail.job.id ? "Confirm delete" : "Delete review"} aria-label={deleteConfirm === detail.job.id ? "Confirm delete" : "Delete review"} onClick={() => void removeJob(detail.job.id)} disabled={busy === `delete:${detail.job.id}`}><Trash2 size={16} /></button>}</div>}</div>
+          <div className="panel-header"><h2>Review detail</h2>{detail && <div className="header-actions"><span className={`state-badge state-${detail.job.state.toLowerCase()}`}>{stateLabel(detail.job.state, detail.job.kind)}</span>{canRunAgain && <button className="btn icon" title="Run this packet again with the current configuration" aria-label="Run this packet again with the current configuration" onClick={() => void runAgain()} disabled={busy === "rerun" || candidateRunning}>{busy === "rerun" ? <LoaderCircle className="spin" size={16} /> : <Repeat2 size={16} />}</button>}{terminalStates.has(detail.job.state) && <button className={`btn icon ${deleteConfirm === detail.job.id ? "danger" : ""}`} title={deleteConfirm === detail.job.id ? "Confirm delete" : "Delete review"} aria-label={deleteConfirm === detail.job.id ? "Confirm delete" : "Delete review"} onClick={() => void removeJob(detail.job.id)} disabled={busy === `delete:${detail.job.id}`}><Trash2 size={16} /></button>}</div>}</div>
           {!detail ? <div className="empty"><div>{detailLoading ? <LoaderCircle className="spin" size={30} /> : <ShieldCheck size={30} />}<p>{detailLoading ? "Loading review details." : "Choose a review from history."}</p></div></div> : <>
             {/* While a comparison set is open no configuration has been chosen, so the job level facts describe the set. */}
             <div className="review-facts">{comparing && !detail.job.selectedCandidateId
@@ -971,7 +1005,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
             <div className="panel-body detail-content">
               {detailTab === "live" && <><div className="transcript-heading"><div><strong>{viewingCandidate ? `${viewedCandidate?.label} transcript` : selectedActive ? "Codex is responding" : terminalStates.has(detail.job.state) ? "Response complete" : stateLabel(detail.job.state)}</strong><span>{lastEvent ? `Updated ${new Date(lastEvent.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "Waiting for text"}</span></div>{selectedActive && <LoaderCircle className="spin" size={16} />}</div>{shownEvents.length ? <div className="transcript">{shownEvents.map((event) => { const message = event.title === "Codex session started" ? "" : readableValue(event.message); return <section key={event.id} className={`transcript-entry source-${event.source}`}><div className="transcript-meta"><span>{sourceLabel(event.source)}</span><time>{new Date(event.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}</time></div>{message ? <div className="transcript-text">{message}</div> : <div className="transcript-status">{readableEventTitle(event.title)}</div>}{event.usage && <div className="transcript-usage">Input {event.usage.inputTokens?.toLocaleString() || 0} / Cached {event.usage.cachedInputTokens?.toLocaleString() || 0} / Output {event.usage.outputTokens?.toLocaleString() || 0} / Reasoning {event.usage.reasoningOutputTokens?.toLocaleString() || 0}</div>}</section>; })}</div> : <div className="empty compact"><div>{selectedActive ? <LoaderCircle className="spin" size={24} /> : <Clock3 size={24} />}<p>{selectedActive ? "Waiting for Codex to emit text." : "No transcript was retained for this older review."}</p></div></div>}</>}
               {detailTab === "packet" && <>{detail.packetQuality && <div className="packet-quality"><div><span>Quality</span><strong>{detail.packetQuality.score}/100</strong></div><div><span>Sections</span><strong>{detail.packetQuality.sectionsPresent}/{detail.packetQuality.sectionsRequired}</strong></div><div><span>Sources</span><strong>{detail.packetQuality.sourceIds}</strong></div><div><span>Citations</span><strong>{detail.packetQuality.sourceReferences}</strong></div></div>}{detail.packetQuality && detail.packetQuality.issues.length > 0 && <ul className="quality-issues">{detail.packetQuality.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}<div className="content-heading"><span>Submitted context</span><code>{detail.job.packetHash.slice(0, 12)}</code></div><pre className="code-block packet-block">{detail.preview || "Packet unavailable."}</pre>{detail.packetTruncated && <p className="notice">Packet preview limited to 200 KB.</p>}</>}
-              {detailTab === "result" && <><div className="content-heading"><span>{viewingCandidate ? `${viewedCandidate?.label} response` : "Review result"}</span><code>{viewingCandidate ? outcomeLabel(viewedCandidate?.internalCode) : stateLabel(detail.job.state)}</code></div>{readableResult ? <ResultCard result={readableResult} phoneOnly={viewingCandidate && viewedCandidate?.id !== detail.job.selectedCandidateId} /> : <div className="empty compact"><div>{selectedActive || viewedCandidate?.state === "RUNNING" ? <LoaderCircle className="spin" size={24} /> : <ShieldCheck size={24} />}<p>{selectedActive || viewedCandidate?.state === "RUNNING" ? "The review is still running." : "No substantive review was released."}</p></div></div>}{privateCodexResponse && <section className="private-codex-response"><div className="content-heading secondary"><span>Codex response that was not released</span></div><ResultCard result={privateCodexResponse} phoneOnly /></section>}{usage.input > 0 && <div className="usage-summary"><div><span>Input</span><strong>{usage.input.toLocaleString()}</strong></div><div><span>Output</span><strong>{usage.output.toLocaleString()}</strong></div><div><span>Reasoning</span><strong>{usage.reasoning.toLocaleString()}</strong></div></div>}</>}
+              {detailTab === "result" && parallelJob ? <><div className="content-heading"><span>Independent answer</span><code>Phone only</code></div>{parallelAnswer ? <article className="readable-result not-released"><div className="phone-only-label"><LockKeyhole size={14} /><span>Phone only. This was never sent to Claude.</span></div><div className="result-verdict"><div><span>Confidence</span><strong>{parallelAnswer.confidence || "Unstated"}</strong></div></div><div className="result-assessment"><h3>Answer</h3><p>{parallelAnswer.answer}</p></div>{parallelAnswer.approach && <div className="result-counterargument"><h3>Approach</h3><p>{parallelAnswer.approach}</p></div>}{parallelAnswer.assumptions.length > 0 && <div className="result-recommendations"><h3>Assumptions</h3><ol>{parallelAnswer.assumptions.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ol></div>}{parallelAnswer.evidence.length > 0 && <div className="result-evidence"><h3>Evidence cited</h3><div>{parallelAnswer.evidence.map((item) => <code key={item}>{item}</code>)}</div></div>}{parallelAnswer.openQuestions.length > 0 && <div className="result-recommendations"><h3>Open questions</h3><ol>{parallelAnswer.openQuestions.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ol></div>}</article> : <div className="empty compact"><div>{selectedActive ? <LoaderCircle className="spin" size={24} /> : <ShieldCheck size={24} />}<p>{selectedActive ? "Sol is still answering." : "No answer was recorded."}</p></div></div>}</> : detailTab === "result" ? <><div className="content-heading"><span>{viewingCandidate ? `${viewedCandidate?.label} response` : "Review result"}</span><code>{viewingCandidate ? outcomeLabel(viewedCandidate?.internalCode) : stateLabel(detail.job.state)}</code></div>{readableResult ? <ResultCard result={readableResult} phoneOnly={viewingCandidate && viewedCandidate?.id !== detail.job.selectedCandidateId} /> : <div className="empty compact"><div>{selectedActive || viewedCandidate?.state === "RUNNING" ? <LoaderCircle className="spin" size={24} /> : <ShieldCheck size={24} />}<p>{selectedActive || viewedCandidate?.state === "RUNNING" ? "The review is still running." : "No substantive review was released."}</p></div></div>}{privateCodexResponse && <section className="private-codex-response"><div className="content-heading secondary"><span>Codex response that was not released</span></div><ResultCard result={privateCodexResponse} phoneOnly /></section>}{usage.input > 0 && <div className="usage-summary"><div><span>Input</span><strong>{usage.input.toLocaleString()}</strong></div><div><span>Output</span><strong>{usage.output.toLocaleString()}</strong></div><div><span>Reasoning</span><strong>{usage.reasoning.toLocaleString()}</strong></div></div>}</> : null}
               {detailTab === "raw" && <><div className="raw-intro"><TerminalSquare size={16} /><span>Exact technical records for troubleshooting.{viewingCandidate ? ` Showing ${viewedCandidate?.label}.` : ""}</span></div><div className="content-heading"><span>Codex event stream</span><code>{shownLive ? formatBytes(new Blob([shownLive]).size) : "0 B"}</code></div><pre className="code-block raw-block">{shownLive || "No Codex event stream was retained."}</pre><div className="content-heading secondary"><span>{viewingCandidate ? "Gate output for this candidate" : "Released result"}</span></div><pre className="code-block raw-block">{shownResult || "No released result was retained."}</pre><div className="content-heading secondary"><span>Final Codex response before release checks</span></div><pre className="code-block raw-block">{shownRaw || "No final Codex response was retained."}</pre></>}
             </div>
           </>}

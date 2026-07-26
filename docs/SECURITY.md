@@ -43,6 +43,14 @@ The model id must match `^[A-Za-z0-9][A-Za-z0-9._:-]{1,63}$`, so it cannot begin
 
 The policy text, its SHA 256, the model, and the reasoning effort are recorded on the job and shown only in the paired PWA. Neither the protocol selection nor the policy is released to the reviewed client.
 
+## Parallel Answers
+
+`/solute` is a one way transfer. The client uploads, commits, prints a fixed acknowledgement, and exits without reading any result. The server refuses to hand a parallel answer to a client capability even if one asks: `clientResult` returns the fixed terminal response for a parallel job before it looks at anything else.
+
+The acknowledgement is a compile time constant used on every exit path, including a failed upload, so the session that ran the command cannot infer whether the submission worked, how long the answer took, or anything it said.
+
+What the session unavoidably knows is that the command was run, because it ran it. The skill instructs the assistant to continue unchanged and not to treat the acknowledgement as information. That is a behavioral contract, not an enforced boundary, and it carries the same limitation as every other prompt level rule in this repository.
+
 ## Candidate Selection
 
 A comparison set produces several complete reviews for one packet. Releasing one of them is a phone signed request, and the server enforces four rules:
