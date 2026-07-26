@@ -1005,6 +1005,16 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
               <details className="disclosure" open><summary>Read the packet</summary><pre className="code-block packet-block">{detail.preview || "Packet unavailable."}</pre>{detail.packetTruncated && <p className="notice">Packet preview limited to 200 KB.</p>}</details>
               <details className="disclosure"><summary>Technical details</summary><div className="detail-rows"><div><span>Review</span><code>{detail.job.id}</code></div><div><span>Packet hash</span><code>{detail.job.packetHash.slice(0, 24)}</code></div><div><span>Configuration</span><code>{runConfig ? `${runConfig.settings.model} / ${runConfig.settings.reasoning} / ${activeProtocol?.version || runConfig.settings.protocolId}` : "Loading"}</code></div><div><span>Expires</span><code>{new Date(detail.job.expiresAt).toLocaleString()}</code></div></div></details>
             </div>
+            {runConfig && <div className="panel decision-plan">{runConfig.settings.panel.length > 1 ? <>
+              <strong>Approving runs {runConfig.settings.panel.length} responses on this one packet.</strong>
+              <ul>{runConfig.settings.panel.map((entry, index) => <li key={`plan-${index}`}>{entry.model} · {entry.reasoning} · {runConfig.protocols.find((protocol) => protocol.id === entry.protocolId)?.version || entry.protocolId}</li>)}</ul>
+              <span>They run one after another. Nothing reaches Claude until you choose one of them.</span>
+            </> : <>
+              <strong>Approving runs one review, released to Claude automatically.</strong>
+              <span>{runConfig.settings.model} · {runConfig.settings.reasoning} · {activeProtocol?.version || runConfig.settings.protocolId}</span>
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+              <a href="/?view=lab">Run several models and choose between them</a>
+            </>}</div>}
             <div className="action-bar">
               <button className="btn primary big" type="button" onClick={() => void decision("approve")} disabled={Boolean(busy)}>{busy === "approve" ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />} Approve</button>
               {Boolean(runConfig?.settings.panel.length) && <button className="btn big" type="button" onClick={() => void decision("approve_panel")} disabled={Boolean(busy)}>{busy === "approve_panel" ? <LoaderCircle className="spin" size={17} /> : <Layers size={17} />} Approve with {runConfig?.settings.panel.length} candidates</button>}

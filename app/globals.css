@@ -561,3 +561,8 @@ body { font-size: 1.0625rem; line-height: 1.5; }
 .protocol-list .legacy-row { color: var(--muted); background: #fafbfa; }
 .protocol-list .legacy-row strong { color: var(--muted); }
 .protocol-list .legacy-row span { flex: 1 1 60%; text-align: right; }
+.decision-plan { display: grid; gap: 7px; padding: 14px 16px; }
+.decision-plan strong { font-size: 0.9375rem; line-height: 1.45; }
+.decision-plan span { color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
+.decision-plan ul { margin: 2px 0; padding-left: 20px; color: var(--ink); font-size: 0.875rem; line-height: 1.6; }
+.decision-plan a { color: var(--green); font-size: 0.875rem; font-weight: 750; }

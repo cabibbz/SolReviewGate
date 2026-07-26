@@ -185,6 +185,8 @@ The environment values `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` 
 
 ## Compare Several Responses And Choose One
 
+One `/sol` always produces exactly one packet. What a comparison set multiplies is the responses to that packet, not the packets themselves: the same evidence is reviewed by several configurations, and you choose which of those responses reaches Claude.
+
 **Models at once** in the same panel sets how many configurations one approval runs on the same packet, from one to six. One is a single run released automatically. Choosing more fills the comparison set with that many models at the current effort and protocol, and each slot can then be pointed at any model.
 
 The same **Run configuration** panel holds a **comparison set** of up to six configurations. When the set is not empty, an approval offers **Approve with N candidates**:
