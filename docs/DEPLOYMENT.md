@@ -84,19 +84,41 @@ SOL_RELEASE_JITTER_MS
 
 ## Deploy
 
-Deploy through the Vercel Git integration or run:
+Production can be deployed three ways. The first two need no local clone, which matters when the server repository is kept off every machine that runs Claude Code.
+
+### From GitHub, with the Vercel Git integration
+
+In the Vercel project, open **Settings**, **Git**, connect `cabibbz/SolReviewGate`, and set the production branch to `main`. Every merge to `main` then builds and deploys itself. Nothing else is required.
+
+### From GitHub Actions
+
+Use this when the project should stay disconnected from Git. Add three repository secrets under **Settings**, **Secrets and variables**, **Actions**:
+
+| Secret | Where it comes from |
+| --- | --- |
+| `VERCEL_TOKEN` | Vercel account settings, Tokens |
+| `VERCEL_ORG_ID` | Vercel project settings, General |
+| `VERCEL_PROJECT_ID` | Vercel project settings, General |
+
+The `Deploy` workflow then verifies and deploys production on every push to `main`, and can be run on demand from the Actions tab. Without those secrets the workflow reports what is missing and stops rather than failing.
+
+### From a local clone
 
 ```powershell
 vercel deploy --prod
 ```
 
-Check:
+`--prod` matters. Without it the CLI publishes a preview URL and production keeps serving the previous build. Confirm the clone is linked to the intended project first with `cat .vercel/project.json`, because an unlinked directory creates a new project under a different address.
+
+## Confirm What Is Running
+
+`/api/health` reports the running build:
 
 ```text
 https://yourdomain.example/api/health
 ```
 
-A healthy unpaired deployment returns JSON with `ok` set to `true`.
+The `build` field carries the deployed commit. A response with no `build` field predates this feature, which means the deployment is older than it looks. A healthy unpaired deployment also returns `ok` set to `true`.
 
 ## Install The PWA And Pair The Phone
 

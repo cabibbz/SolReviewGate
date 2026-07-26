@@ -11,7 +11,9 @@ function numberEnv(name: string, fallback: number): number {
 export const config = {
   isProduction,
   // Identifies the running build so the PWA can show which deployment it is talking to.
-  build: (process.env.SOL_BUILD || process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || "local",
+  // NEXT_PUBLIC_SOL_BUILD is inlined at build time, so it survives a deployment that carries
+  // no git metadata. The other two are read at run time when they are present.
+  build: (process.env.NEXT_PUBLIC_SOL_BUILD || process.env.SOL_BUILD || process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || "local",
   model: process.env.SOL_MODEL || "gpt-5.6-sol",
   reasoning: process.env.SOL_REASONING || "medium",
   protocolVersion: process.env.SOL_PROTOCOL_VERSION || "alignment-v1",
