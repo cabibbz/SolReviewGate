@@ -9,6 +9,7 @@ import {
   adminLiveLog,
   appendJobEvents,
   candidateLive,
+  claimCandidate,
   createCandidate,
   getCandidate,
   JobError,
@@ -364,6 +365,7 @@ export async function pollDeviceLogin(store: Store = getStore()): Promise<Device
 async function markJobRunning(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
   const job = await adminGetJob(id, store);
   if (!job || job.state !== "APPROVED") return;
+  // Losing this transition means another path already moved the job. That is not a failed run.
   const running = await transitionJob(id, ["APPROVED"], "RUNNING", {
     startedAt: candidate.startedAt || Date.now(),
     sandboxCommandId: candidate.sandboxCommandId,
@@ -374,7 +376,10 @@ async function markJobRunning(id: string, candidate: ReviewCandidate, store: Sto
     policyHash: candidate.policyHash,
     schemaHash: candidate.schemaHash,
     workerHash: candidate.workerHash,
-  }, store);
+  }, store).catch((error) => {
+    if (error instanceof JobError && error.code === "INVALID_STATE") return null;
+    throw error;
+  });
   void running;
 }
 
@@ -400,6 +405,8 @@ function candidateAssets(job: ReviewJob, candidate: ReviewCandidate): { policyFi
 }
 
 async function startCandidate(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
+  // Whoever claims it starts it. A second caller that arrives during Sandbox creation stops here.
+  if (!(await claimCandidate(id, candidate.id, store))) return;
   const job = await adminGetJob(id, store);
   if (!job) return;
   const { policyFile, schemaFile, schemaPath } = candidateAssets(job, candidate);

@@ -5,6 +5,7 @@ import { sha256 } from "../../lib/crypto";
 import { OPAQUE_OUTPUT } from "../../lib/gate";
 import {
   candidateRaw,
+  claimCandidate,
   clientResult,
   commitJob,
   createCandidate,
@@ -206,4 +207,29 @@ test("a parallel answer takes no approval slot and never reaches the client", as
 
   // The waiting review still owns the outstanding slot and is unaffected.
   assert.equal(await store.get(`sol:client:${client.id}:outstanding`), review.job.id);
+});
+
+test("a queued candidate is started once even when two callers arrive together", async () => {
+  const store = getStore();
+  const { job } = await approvedJob(store);
+  const candidate = await createCandidate(job.id, { model: "gpt-5.6-sol", reasoning: "high", protocolId: "control", protocolVersion: "alignment-control-v1" }, false, store);
+
+  // The approval request and the phone's polling can both reach the same queued candidate.
+  const claims = await Promise.all([
+    claimCandidate(job.id, candidate.id, store),
+    claimCandidate(job.id, candidate.id, store),
+    claimCandidate(job.id, candidate.id, store),
+  ]);
+  assert.deepEqual(claims.filter(Boolean).length, 1);
+});
+
+test("a job already moved on does not fail the run that moved it", async () => {
+  const store = getStore();
+  const { job } = await approvedJob(store);
+  // The job is RUNNING. A second start path attempting the same transition must not throw.
+  await assert.rejects(
+    () => transitionJob(job.id, ["APPROVED"], "RUNNING", {}, store),
+    (error: unknown) => error instanceof JobError && error.code === "INVALID_STATE",
+  );
+  assert.equal((await store.get<ReviewJob>(`sol:job:${job.id}`))?.state, "RUNNING");
 });
