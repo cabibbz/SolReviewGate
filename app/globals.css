@@ -3,7 +3,8 @@
   --paper: #f4f5f2;
   --surface: #ffffff;
   --ink: #1c2421;
-  --muted: #66706b;
+  /* Contrast checked against both --surface and --paper for small text. */
+  --muted: #55605b;
   --line: #d8ddd9;
   --green: #176b4d;
   --green-soft: #e4f2eb;
@@ -16,7 +17,8 @@
 
 * { box-sizing: border-box; min-width: 0; }
 
-html { width: 100%; max-width: 100%; overflow-x: hidden; background: var(--paper); }
+/* Percentage keeps the browser or system text size setting in effect. */
+html { width: 100%; max-width: 100%; overflow-x: hidden; background: var(--paper); font-size: 100%; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 body {
   margin: 0;
@@ -136,7 +138,7 @@ button { cursor: pointer; }
 .detail-rows > div { display: grid; gap: 3px; }
 .detail-rows span { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
 .detail-rows code { overflow-wrap: anywhere; font-size: 11px; }
-.action-bar { display: grid; gap: 9px; position: sticky; bottom: 0; z-index: 3; padding: 12px 0 14px; background: linear-gradient(to bottom, rgba(244, 246, 244, 0.75), var(--bg) 32%); }
+.action-bar { display: grid; gap: 9px; position: sticky; bottom: 0; z-index: 3; padding: 12px 0 14px; background: linear-gradient(to bottom, rgba(244, 245, 242, 0), var(--paper) 28%); }
 .btn.big { min-height: 52px; font-size: 15px; }
 .decision-note { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; color: #4d577a; background: #edf0f8; font-size: 12px; line-height: 1.5; }
 .candidate-cards { display: grid; gap: 12px; }
@@ -489,4 +491,54 @@ button { cursor: pointer; }
 
 @media (prefers-reduced-motion: no-preference) {
   button { transition: background-color 130ms ease, border-color 130ms ease, opacity 130ms ease; }
+}
+
+/* ---------------------------------------------------------------------------
+   Accessibility layer. Sizes are in rem so the reader's own text size setting
+   scales the interface, targets meet the 44px minimum, and every interactive
+   element shows a visible focus ring.
+   --------------------------------------------------------------------------- */
+
+body { font-size: 1.0625rem; line-height: 1.5; }
+
+.btn { min-height: 2.875rem; padding: 0.6rem 0.9rem; font-size: 0.9375rem; }
+.btn.icon { flex-basis: 2.875rem; width: 2.875rem; }
+.btn.big { min-height: 3.375rem; font-size: 1.0625rem; }
+.view-tabs button, .view-tabs a, .detail-tabs button { min-height: 2.875rem; font-size: 0.8125rem; }
+.menu-sheet a, .menu-sheet button { min-height: 3.5rem; font-size: 1rem; }
+.disclosure > summary { min-height: 3.25rem; font-size: 0.9375rem; }
+.field input, .field select, .run-config select, .history-filters select, .history-filters input, .retention-control select, .token-box input {
+  min-height: 2.875rem;
+  /* 16px or larger stops iOS zooming the page when the field is focused. */
+  font-size: 1rem;
+}
+
+.metric-label, .review-facts span, .candidate-facts span, .run-config-facts span, .decision-facts span,
+.storage-metrics span, .usage-summary span, .lab-metrics span, .packet-quality span {
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+.review-facts strong, .candidate-facts strong, .run-config-facts strong { font-size: 0.875rem; }
+.decision-facts strong { font-size: 1.125rem; }
+.state-badge { min-height: 1.75rem; padding: 0.25rem 0.55rem; font-size: 0.75rem; }
+.section-copy, .demo-panel-copy { font-size: 0.9375rem; line-height: 1.6; }
+.candidate-assessment { font-size: 1rem; }
+.candidate-card > header strong { font-size: 1.0625rem; }
+.candidate-verdict strong { font-size: 1.25rem; }
+.candidate-verdict span { font-size: 0.75rem; }
+.attention-head h2 { font-size: 1.5rem; }
+.attention-head p, .decision-note, .quality-issues li, .job-meta, .selection-copy span { font-size: 0.875rem; }
+.panel-header h2 { font-size: 1.125rem; }
+.job-id, .job-button .job-id { font-size: 0.875rem; }
+.transcript-text, .result-assessment p, .result-recommendations li, .result-counterargument p { font-size: 1rem; line-height: 1.6; }
+.notice { font-size: 0.9375rem; }
+
+:where(a, button, summary, select, input, [tabindex]):focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
