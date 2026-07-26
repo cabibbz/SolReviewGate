@@ -11,14 +11,20 @@ export type ReasoningEffort = (typeof reasoningEfforts)[number];
 /** Codex receives the model as one argv value and the effort inside a `-c` assignment. Both are constrained here. */
 const modelPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{1,63}$/;
 
+/**
+ * Model ids the Codex CLI accepts for `--model`. The GPT-5.6 family is Sol, Terra, and Luna;
+ * there is no bare `gpt-5.6` and no `gpt-5.6-codex`. Availability still depends on the account
+ * and the installed CLI version, so this is a starting list and any other id can be entered.
+ */
 const builtInModels = [
   "gpt-5.6-sol",
-  "gpt-5.6-codex",
-  "gpt-5.6",
-  "gpt-5.1-codex-max",
-  "gpt-5.1-codex",
-  "gpt-5.1",
-  "gpt-5-codex",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.3-codex",
+  "gpt-5.2-codex",
 ] as const;
 
 export interface ReviewConfig {
