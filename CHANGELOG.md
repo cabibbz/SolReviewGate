@@ -27,6 +27,8 @@
 
 ### Fixed
 
+* The source overlap named candidates by model alone, so one model run under two protocols was indistinguishable. A candidate is now labelled by whatever actually differs: the model, plus the protocol when a model repeats, plus the effort when a model and protocol pair repeats
+
 * The page jumped back up while reading. The candidate strip scrolled itself into view from an inline `ref` callback, which React re-invokes on every render, so each two second poll dragged the page back to the strip. Only the strip scrolls now, horizontally, and only when the selection changes
 * Polling no longer re-renders the page when the server returned the same jobs, review, candidate, storage, clients, or events
 

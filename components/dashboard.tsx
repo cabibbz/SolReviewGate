@@ -438,30 +438,41 @@ function parseParallelAnswer(value: string | null): ParallelAnswer | null {
 
 interface ComparisonRow {
   id: string;
+  /** Distinguishes this candidate from the others by whatever actually differs between them. */
+  label: string;
   model: string;
   protocolVersion: string;
+  reasoning: string;
   verdict: string;
   confidence: string;
   releasable: boolean;
   evidence: string[];
 }
 
+const shortProtocol = (version: string) => version.replace(/^alignment-/, "");
+
 /** Reads the candidate responses into one comparison, so disagreement is visible before reading. */
 function comparison(rows: Candidate[]): { rows: ComparisonRow[]; agreement: string; evidence: { source: string; models: string[] }[] } | null {
-  const parsed = rows
-    .filter((candidate) => !candidate.postRelease && candidate.state === "COMPLETE")
-    .map((candidate) => {
-      const result = parseResult(candidate.result || null);
-      return {
-        id: candidate.id,
-        model: candidate.model,
-        protocolVersion: candidate.protocolVersion,
-        verdict: candidate.releasable && result ? result.verdict : "No answer",
-        confidence: result?.confidence || "",
-        releasable: Boolean(candidate.releasable),
-        evidence: result?.evidence || [],
-      };
-    });
+  const complete = rows.filter((candidate) => !candidate.postRelease && candidate.state === "COMPLETE");
+  // The same model can appear under two protocols, and the same pair under two efforts.
+  const sharedModel = (candidate: Candidate) => complete.filter((other) => other.model === candidate.model).length > 1;
+  const sharedProtocol = (candidate: Candidate) => complete.filter((other) => other.model === candidate.model && other.protocolVersion === candidate.protocolVersion).length > 1;
+  const parsed = complete.map((candidate) => {
+    const result = parseResult(candidate.result || null);
+    return {
+      id: candidate.id,
+      label: sharedModel(candidate)
+        ? `${candidate.model} · ${shortProtocol(candidate.protocolVersion)}${sharedProtocol(candidate) ? ` · ${candidate.reasoning}` : ""}`
+        : candidate.model,
+      model: candidate.model,
+      protocolVersion: candidate.protocolVersion,
+      reasoning: candidate.reasoning,
+      verdict: candidate.releasable && result ? result.verdict : "No answer",
+      confidence: result?.confidence || "",
+      releasable: Boolean(candidate.releasable),
+      evidence: result?.evidence || [],
+    };
+  });
   if (parsed.length < 2) return null;
   const verdicts = parsed.filter((row) => row.releasable).map((row) => row.verdict);
   const counts = new Map<string, number>();
@@ -475,7 +486,7 @@ function comparison(rows: Candidate[]): { rows: ComparisonRow[]; agreement: stri
   const sources = [...new Set(parsed.flatMap((row) => row.evidence))].sort();
   const evidence = sources.map((source) => ({
     source,
-    models: parsed.filter((row) => row.evidence.includes(source)).map((row) => row.model),
+    models: parsed.filter((row) => row.evidence.includes(source)).map((row) => row.label),
   }));
   return { rows: parsed, agreement, evidence };
 }
@@ -1052,7 +1063,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
             <div className="panel decision-note"><LockKeyhole size={15} /><span>Nothing has reached Claude yet. Release one response, or release nothing. This decision is final for the packet.</span></div>
             {candidateComparison && <div className="panel compare-panel">
               <div className="compare-agreement"><strong>{candidateComparison.agreement}</strong></div>
-              <div className="matrix-scroll"><table className="compare-table"><thead><tr><th scope="col">Model</th><th scope="col">Verdict</th><th scope="col">Confidence</th></tr></thead><tbody>{candidateComparison.rows.map((row) => <tr key={row.id} className={row.releasable ? "" : "blocked-row"}><th scope="row"><strong>{row.model}</strong><span>{row.protocolVersion}</span></th><td>{row.verdict}</td><td>{row.confidence || "—"}</td></tr>)}</tbody></table></div>
+              <div className="matrix-scroll"><table className="compare-table"><thead><tr><th scope="col">Model</th><th scope="col">Verdict</th><th scope="col">Confidence</th></tr></thead><tbody>{candidateComparison.rows.map((row) => <tr key={row.id} className={row.releasable ? "" : "blocked-row"}><th scope="row"><strong>{row.model}</strong><span>{shortProtocol(row.protocolVersion)} · {row.reasoning}</span></th><td>{row.verdict}</td><td>{row.confidence || "—"}</td></tr>)}</tbody></table></div>
               {candidateComparison.evidence.length > 0 && <details className="disclosure"><summary>Which sources each one used</summary><div className="evidence-overlap">{candidateComparison.evidence.map((entry) => <div key={entry.source}><code>{entry.source}</code><span>{entry.models.length === candidateComparison.rows.length ? "cited by all" : `only ${entry.models.join(", ")}`}</span></div>)}</div></details>}
             </div>}
             <div className="candidate-cards">{candidates.filter((candidate) => !candidate.postRelease).map((candidate) => {
