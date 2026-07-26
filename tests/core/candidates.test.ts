@@ -4,6 +4,7 @@ import test from "node:test";
 import { sha256 } from "../../lib/crypto";
 import { OPAQUE_OUTPUT } from "../../lib/gate";
 import {
+  candidateRaw,
   clientResult,
   commitJob,
   createCandidate,
@@ -171,4 +172,38 @@ test("counts candidate payloads in storage and removes them with the review", as
   assert.deepEqual(await listCandidates(job.id, store), []);
   assert.equal(await store.get(`sol:job:${job.id}:candidate:${only.id}`), null);
   assert.equal(await store.get(`sol:job:${job.id}:candidate:${only.id}:output`), null);
+});
+
+test("a parallel answer takes no approval slot and never reaches the client", async () => {
+  const store = getStore();
+  const { client } = await registerClient("parallel test", store);
+  const raw = Buffer.from("# SOL PARALLEL PACKET\n\n## Request\nAnswer this.\n\n## Source Manifest\nS1 | fixture\n");
+  const compressed = gzipSync(raw);
+
+  // A review is already outstanding for this client.
+  const review = await createJob(client, { packetHash: sha256(raw), compressedHash: sha256(compressed), compressedBytes: compressed.length, chunkCount: 1 }, store);
+  await uploadChunk(review.job.id, review.capability, 0, compressed.toString("base64"), store);
+  await commitJob(review.job.id, review.capability, store);
+
+  // The parallel submission is neither blocked by it nor queued for approval.
+  const parallel = await createJob(client, { packetHash: sha256(raw), compressedHash: sha256(compressed), compressedBytes: compressed.length, chunkCount: 1, kind: "parallel" }, store);
+  await uploadChunk(parallel.job.id, parallel.capability, 0, compressed.toString("base64"), store);
+  const committed = await commitJob(parallel.job.id, parallel.capability, store);
+  assert.equal(committed.kind, "parallel");
+  assert.deepEqual(await store.pendingIds(10), [review.job.id]);
+
+  await transitionJob(parallel.job.id, ["AWAITING_APPROVAL"], "APPROVED", {}, store);
+  await transitionJob(parallel.job.id, ["APPROVED"], "RUNNING", { startedAt: Date.now() }, store);
+  const candidate = await createCandidate(parallel.job.id, { model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline", protocolVersion: "answer-v1" }, false, store);
+  const answer = JSON.stringify({ answer: "Independent answer.", approach: "Read the context.", confidence: "MEDIUM", assumptions: [], evidenceCited: ["S1"], openQuestions: [] });
+  await saveCandidateResult(parallel.job.id, candidate.id, { output: OPAQUE_OUTPUT, raw: answer, releasable: false, internalCode: "ANSWER_RECORDED" }, store);
+  await publishCandidate(parallel.job.id, candidate.id, store);
+
+  // The answer is retained for the phone and is not what the client can read.
+  assert.match((await candidateRaw(parallel.job.id, candidate.id, store)) || "", /Independent answer\./);
+  const clientView = await clientResult(parallel.job.id, parallel.capability, store);
+  assert.deepEqual(clientView, { pending: false, output: OPAQUE_OUTPUT });
+
+  // The waiting review still owns the outstanding slot and is unaffected.
+  assert.equal(await store.get(`sol:client:${client.id}:outstanding`), review.job.id);
 });

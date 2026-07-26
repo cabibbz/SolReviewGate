@@ -3,7 +3,7 @@ import { config } from "@/lib/config";
 import { decryptBuffer, decryptText, encryptBuffer, encryptText, randomToken, safeEqual, sha256 } from "@/lib/crypto";
 import { OPAQUE_OUTPUT } from "@/lib/gate";
 import { getStore, type Store } from "@/lib/store";
-import type { ClientRecord, JobState, ReviewCandidate, ReviewEvent, ReviewJob, RunSummary } from "@/lib/types";
+import type { ClientRecord, JobKind, JobState, ReviewCandidate, ReviewEvent, ReviewJob, RunSummary } from "@/lib/types";
 
 const jobKey = (id: string) => `sol:job:${id}`;
 const chunkKey = (id: string, index: number) => `sol:job:${id}:chunk:${index}`;
@@ -300,7 +300,7 @@ export async function authenticateClient(token: string, store: Store = getStore(
 
 export async function createJob(
   client: ClientRecord,
-  input: { packetHash: string; compressedHash: string; compressedBytes: number; chunkCount: number },
+  input: { packetHash: string; compressedHash: string; compressedBytes: number; chunkCount: number; kind?: JobKind },
   store: Store = getStore(),
 ): Promise<{ job: ReviewJob; capability: string }> {
   if (!/^[a-f0-9]{64}$/.test(input.packetHash) || !/^[a-f0-9]{64}$/.test(input.compressedHash)) throw new JobError("INVALID_HASH");
@@ -309,12 +309,15 @@ export async function createJob(
   if (input.chunkCount !== expectedChunks || expectedChunks > 64) throw new JobError("INVALID_CHUNKS");
 
   const id = randomToken(24);
-  if (!(await store.setIfAbsent(outstandingKey(client.id), id, config.jobTtlSeconds))) throw new JobError("OUTSTANDING_JOB");
+  const kind: JobKind = input.kind === "parallel" ? "parallel" : "review";
+  // A parallel answer never blocks, and is never blocked by, a review the client is waiting on.
+  if (kind === "review" && !(await store.setIfAbsent(outstandingKey(client.id), id, config.jobTtlSeconds))) throw new JobError("OUTSTANDING_JOB");
 
   const capability = randomToken();
   const createdAt = now();
   const job: ReviewJob = {
     id,
+    kind,
     clientId: client.id,
     clientTokenHash: sha256(capability),
     packetHash: input.packetHash,
@@ -379,8 +382,17 @@ export async function commitJob(id: string, capability: string, store: Store = g
   await readPacket(job, store);
   const next: ReviewJob = { ...job, uploadedChunks: job.chunkCount, state: "AWAITING_APPROVAL", updatedAt: now() };
   if (!(await store.transition(jobKey(id), ["UPLOADING"], next, ttlFor(next)))) throw new JobError("RACE");
-  await store.addPending(id, job.createdAt);
-  await appendJobEvents(id, [{ id: "system:awaiting-approval", at: next.updatedAt, source: "system", level: "info", title: "Packet verified", message: "Integrity checks passed. Waiting for phone approval." }], store, ttlFor(next)).catch(() => undefined);
+  if (job.kind !== "parallel") await store.addPending(id, job.createdAt);
+  await appendJobEvents(id, [{
+    id: "system:awaiting-approval",
+    at: next.updatedAt,
+    source: "system",
+    level: "info",
+    title: "Packet verified",
+    message: job.kind === "parallel"
+      ? "Integrity checks passed. Answering independently without approval, and without returning anything to the client."
+      : "Integrity checks passed. Waiting for phone approval.",
+  }], store, ttlFor(next)).catch(() => undefined);
   return next;
 }
 
@@ -488,7 +500,7 @@ export async function saveTerminalResult(id: string, output: string, raw: string
     { id: "gate:complete", at: completedAt, source: "gate", level: opaque ? "warning" : "success", ...outcome },
     { id: "result:stored", at: completedAt, source: "result", level: "success", title: "Review retained", message: `Stored for ${Math.round(retainedSeconds / 86_400)} day(s).` },
   ], store, retainedSeconds).catch(() => undefined);
-  await store.del(outstandingKey(job.clientId));
+  if (job.kind !== "parallel") await store.del(outstandingKey(job.clientId));
   return next;
 }
 
@@ -536,6 +548,8 @@ export async function rejectJob(id: string, store: Store = getStore()): Promise<
 
 export async function clientResult(id: string, capability: string, store: Store = getStore()): Promise<{ pending: true } | { pending: false; output: string }> {
   const job = await getAuthorizedJob(id, capability, store);
+  // A parallel answer is phone only by construction. Nothing about it varies for the client.
+  if (job.kind === "parallel") return { pending: false, output: OPAQUE_OUTPUT };
   const terminal = ["COMPLETE_REVIEW", "COMPLETE_OPAQUE", "REJECTED", "EXPIRED"].includes(job.state);
   if (!terminal || (job.releaseAt && job.releaseAt > now())) return { pending: true };
   const encrypted = await store.get<string>(resultKey(id));
@@ -560,7 +574,7 @@ export async function deleteJob(id: string, store: Store = getStore()): Promise<
   const candidates = await listCandidates(id, store);
   await store.del(
     jobKey(id), resultKey(id), rawKey(id), eventsKey(id), liveKey(id), `${eventsKey(id)}:lock`,
-    `sol:job:${id}:poll-lock`, outstandingKey(job.clientId),
+    `sol:job:${id}:poll-lock`, ...(job.kind === "parallel" ? [] : [outstandingKey(job.clientId)]),
     candidateListKey(id), `${candidateListKey(id)}:lock`,
     ...candidates.flatMap((candidate) => [
       candidateKey(id, candidate.id),

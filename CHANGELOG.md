@@ -4,6 +4,8 @@
 
 ### Added
 
+* `/solute` submits the request Claude was given for an independent parallel answer that runs without approval, returns nothing to the session, and is readable only in the PWA
+* Answering policy and output schema for parallel packets, separate from the review policy
 * Decision first phone layout: the PWA opens on the packet or response that is waiting, with history, lab, storage, and clients behind one menu
 * Packet reading, technical records, and full candidate responses collapse behind disclosures on the phone
 * Running build identifier in `/api/health` and in the PWA menu, so the deployed version is visible from the phone

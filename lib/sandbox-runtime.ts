@@ -194,7 +194,7 @@ async function writeRuntimeAssets(sandbox: Sandbox): Promise<void> {
   await sandbox.fs.mkdir("/opt/solgate", { recursive: true });
   await sandbox.fs.mkdir("/tmp/sol-review-empty", { recursive: true });
   await sandbox.fs.mkdir("/home/vercel-sandbox/.codex", { recursive: true });
-  const files = await Promise.all(["worker.mjs", "block-tools.py", "config.toml", "review-schema.json"].map(async (name) => ({
+  const files = await Promise.all(["worker.mjs", "block-tools.py", "config.toml", "review-schema.json", "answer-schema.json"].map(async (name) => ({
     path: name === "config.toml" ? "/home/vercel-sandbox/.codex/config.toml" : `/opt/solgate/${name}`,
     content: await asset(name),
     mode: name.endsWith(".py") ? 0o700 : 0o600,
@@ -391,11 +391,19 @@ async function candidateStarted(id: string, candidate: ReviewCandidate, store: S
   }], store, job ? jobTtl(job) : undefined).catch(() => undefined);
 }
 
+/** A parallel job answers the request itself, so it carries its own policy and output schema. */
+function candidateAssets(job: ReviewJob, candidate: ReviewCandidate): { policyFile: string; schemaFile: string; schemaPath: string } {
+  if (job.kind === "parallel") {
+    return { policyFile: "answer-policy.md", schemaFile: "answer-schema.json", schemaPath: "/opt/solgate/answer-schema.json" };
+  }
+  return { policyFile: resolveProtocol(candidate.protocolId).file, schemaFile: "review-schema.json", schemaPath: "/opt/solgate/review-schema.json" };
+}
+
 async function startCandidate(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
   const job = await adminGetJob(id, store);
   if (!job) return;
-  const protocol = resolveProtocol(candidate.protocolId);
-  const [policy, schema, worker] = await Promise.all([asset(protocol.file), asset("review-schema.json"), asset("worker.mjs")]);
+  const { policyFile, schemaFile, schemaPath } = candidateAssets(job, candidate);
+  const [policy, schema, worker] = await Promise.all([asset(policyFile), asset(schemaFile), asset("worker.mjs")]);
   const fingerprint = { policyHash: sha256(policy), schemaHash: sha256(schema), workerHash: sha256(worker) };
   if (config.mockSandbox) {
     const running = await updateCandidate(id, candidate.id, {
@@ -422,6 +430,7 @@ async function startCandidate(id: string, candidate: ReviewCandidate, store: Sto
         SOL_MODEL: candidate.model,
         SOL_REASONING: candidate.reasoning,
         SOL_GATE_POLICY_BASE64: policy.toString("base64"),
+        SOL_OUTPUT_SCHEMA: schemaPath,
       },
       detached: true,
     });
@@ -505,6 +514,19 @@ export async function rerunReview(id: string, patch: Partial<ReviewConfig>, stor
 }
 
 async function finishMockCandidate(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
+  const job = await adminGetJob(id, store);
+  if (job?.kind === "parallel") {
+    const answer = JSON.stringify({
+      answer: `Independent answer from ${candidate.model}.`,
+      approach: "Read the transferred context and answered the request directly.",
+      confidence: "MEDIUM",
+      assumptions: ["The fixture does not exercise a real model."],
+      evidenceCited: ["S1"],
+      openQuestions: [],
+    });
+    await saveCandidateResult(id, candidate.id, { output: OPAQUE_OUTPUT, raw: answer, releasable: false, internalCode: "ANSWER_RECORDED" }, store);
+    return;
+  }
   const mode = process.env.SOL_MOCK_REVIEW_MODE || "review";
   const withheld = mode === "opaque" || candidate.protocolId === "control";
   const raw = withheld
@@ -539,14 +561,24 @@ async function pollCandidate(id: string, candidate: ReviewCandidate, store: Stor
     }
     const envelope = JSON.parse(resultBuffer.toString("utf8")) as WorkerEnvelope;
     const invalid = envelope.version !== 1 || envelope.exitCode !== 0 || envelope.toolAttempt || envelope.secretLeak || envelope.malformedEvents;
-    const analysis = invalid ? null : analyzeInternalReview(envelope.candidate);
-    await saveCandidateResult(id, candidate.id, {
-      output: analysis?.output || OPAQUE_OUTPUT,
-      raw: envelope.candidate || envelope.diagnostics,
-      releasable: Boolean(!invalid && analysis?.released),
-      internalCode: invalid ? "WORKER_REJECTED" : analysis?.code || "GATE_INVALID_SCHEMA",
-    }, store);
     const job = await adminGetJob(id, store);
+    if (job?.kind === "parallel") {
+      // Nothing is released, so the answer is recorded rather than gated.
+      await saveCandidateResult(id, candidate.id, {
+        output: OPAQUE_OUTPUT,
+        raw: envelope.candidate || envelope.diagnostics,
+        releasable: false,
+        internalCode: invalid ? "WORKER_REJECTED" : "ANSWER_RECORDED",
+      }, store);
+    } else {
+      const analysis = invalid ? null : analyzeInternalReview(envelope.candidate);
+      await saveCandidateResult(id, candidate.id, {
+        output: analysis?.output || OPAQUE_OUTPUT,
+        raw: envelope.candidate || envelope.diagnostics,
+        releasable: Boolean(!invalid && analysis?.released),
+        internalCode: invalid ? "WORKER_REJECTED" : analysis?.code || "GATE_INVALID_SCHEMA",
+      }, store);
+    }
     if (live && job) await saveCandidateLive(id, candidate.id, live, jobTtl(job), store);
     await sandbox.stop({ blocking: false });
   } catch (error) {

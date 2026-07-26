@@ -52,13 +52,13 @@ async function waitForJob(excluded = new Set()) {
   throw new Error("review did not reach the approval queue");
 }
 
-async function runClient(token, packet) {
+async function runClient(token, packet, extraArgs = []) {
   const root = await mkdtemp(path.join(os.tmpdir(), "sol-e2e-"));
   const packetPath = path.join(root, "packet.md");
   const configPath = path.join(root, "remote.json");
   await writeFile(packetPath, packet);
   await writeFile(configPath, JSON.stringify({ url: baseUrl, token }));
-  const child = spawn(process.execPath, [path.resolve("plugins/solreview/bin/solreview.js"), packetPath], {
+  const child = spawn(process.execPath, [path.resolve("plugins/solreview/bin/solreview.js"), ...extraArgs, packetPath], {
     env: { ...process.env, SOL_GATE_CONFIG: configPath, SOL_GATE_POLL_MS: "25", SOL_GATE_TIMEOUT_MS: "15000" },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -244,10 +244,37 @@ const lateRelease = await signedFetch(`/api/admin/jobs/${panelJob.id}/selection`
 assert.equal(lateRelease.response.status, 409);
 step("re-run after release stayed on the phone");
 
+const soluteClient = await runClient(enrollment.body.token, "# SOL PARALLEL PACKET\n\n## Request\nAnswer this independently.\n\n## Source Manifest\nS1 | E2E fixture\n", ["--parallel"]);
+const soluteOutput = await soluteClient.completed;
+assert.deepEqual(soluteOutput, { code: 0, stdout: "Sol has the same question.\n", stderr: "" });
+step("parallel packet acknowledged without waiting");
+
+const known = new Set([firstJob.id, secondJob.id, thirdJob.id, panelJob.id]);
+let soluteJob = null;
+for (let attempt = 0; attempt < 60 && !soluteJob; attempt += 1) {
+  const list = await signedFetch("/api/admin/jobs");
+  const found = list.body.jobs.find((job) => !known.has(job.id));
+  if (found) {
+    const detail = await signedFetch(`/api/admin/jobs/${found.id}`);
+    if (detail.body.job.state.startsWith("COMPLETE")) soluteJob = detail.body;
+  }
+  if (!soluteJob) await new Promise((resolve) => setTimeout(resolve, 100));
+}
+assert.ok(soluteJob, "parallel answer did not complete on its own");
+assert.equal(soluteJob.job.kind, "parallel");
+assert.equal(soluteJob.job.internalCode, "ANSWER_RECORDED");
+assert.equal(soluteJob.job.approvedAt > 0, true);
+assert.equal(soluteJob.result, "Bob Regress");
+assert.equal(soluteJob.candidates.length, 1);
+const soluteCandidate = await signedFetch(`/api/admin/jobs/${soluteJob.job.id}/candidates/${soluteJob.candidates[0].id}`);
+assert.match(soluteCandidate.body.raw, /"answer":"Independent answer from/);
+assert.equal(soluteCandidate.body.candidate.releasable, false);
+step("parallel answer recorded for the phone only");
+
 const unauthorized = await fetch(`${baseUrl}/api/admin/jobs`);
 assert.equal(unauthorized.status, 401);
 assert.equal((await fetch(`${baseUrl}/api/admin/jobs/${panelJob.id}/candidates`)).status, 401);
 assert.equal((await fetch(`${baseUrl}/api/admin/jobs/${panelJob.id}/selection`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ candidateId: null }) })).status, 401);
 assert.equal((await fetch(`${baseUrl}/api/admin/settings`)).status, 401);
 assert.equal((await fetch(`${baseUrl}/api/admin/settings`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "gpt-5.6" }) })).status, 401);
-process.stdout.write("E2E mock cycle passed: pair, login, enroll, upload, preview, approve, review, retain, reject, opaque, reconfigure, compare, select.\n");
+process.stdout.write("E2E mock cycle passed: pair, login, enroll, upload, preview, approve, review, retain, reject, opaque, reconfigure, compare, select, parallel.\n");
