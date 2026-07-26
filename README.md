@@ -53,6 +53,7 @@ The phone retains the operator view. It can show the packet, observable model ev
 | Repeat runs | Runs a retained packet again under another configuration as a phone only record after the packet is answered |
 | Alignment lab | Separates released reviews, model withholding, wrapper blocks, worker failures, and infrastructure failures by protocol version |
 | Public demo | Shows the complete mobile interface with sample data and no access to private accounts or records |
+| Decision first phone | Opens on the packet or response that is waiting, with everything else behind one menu |
 | PWA operation | Installs on a phone home screen and remains usable across ordinary mobile navigation and reconnects |
 
 ## How It Works
@@ -136,7 +137,7 @@ The skill uses the context already visible in the ongoing Claude Code session. I
 
 ## Choose The Model And Alignment Protocol
 
-The reviewing configuration lives in the running PWA, not in a redeploy. Open **Lab** and use **Run configuration** to set:
+The reviewing configuration lives in the running PWA, not in a redeploy. Open the menu, choose **Run configuration and lab**, and set:
 
 | Control | Effect |
 | --- | --- |
@@ -158,7 +159,7 @@ The environment values `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` 
 
 ## Compare Several Responses And Choose One
 
-**Run configuration** also holds a **comparison set** of up to six configurations. When the set is not empty, an approval offers **Approve with N candidates**:
+The same **Run configuration** panel holds a **comparison set** of up to six configurations. When the set is not empty, an approval offers **Approve with N candidates**:
 
 1. Each configuration reviews the same packet in its own isolated Sandbox, one after another.
 2. Nothing reaches Claude while the candidates run. The review waits in `AWAITING_SELECTION`.

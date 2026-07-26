@@ -10,13 +10,13 @@ import {
   Database,
   ExternalLink,
   FileText,
-  HardDrive,
   KeyRound,
   Layers,
   Link2,
   ListTree,
   LoaderCircle,
   LockKeyhole,
+  Menu,
   Plus,
   RefreshCw,
   Repeat2,
@@ -36,6 +36,7 @@ interface Health {
   paired: boolean;
   codexConnected: boolean;
   mode?: string;
+  build?: string;
 }
 
 interface Job {
@@ -409,7 +410,7 @@ function ResultCard({ result, phoneOnly = false }: { result: ReadableResult; pho
   </article>;
 }
 
-export function Dashboard({ initialView }: { initialView: "reviews" | "storage" | "lab" }) {
+export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "storage" | "lab" }) {
   const [health, setHealth] = useState<Health | null>(null);
   const [hasDeviceKey, setHasDeviceKey] = useState(false);
   const [bootstrapSecret, setBootstrapSecret] = useState("");
@@ -427,6 +428,7 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
   const [runConfig, setRunConfig] = useState<ReviewSettingsView | null>(null);
   const [configDraft, setConfigDraft] = useState<ReviewSettings | null>(null);
   const [customModel, setCustomModel] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [viewCandidateId, setViewCandidateId] = useState<string | null>(null);
   const [candidateDetail, setCandidateDetail] = useState<CandidateDetail | null>(null);
   const [releaseConfirm, setReleaseConfirm] = useState<string | null>(null);
@@ -575,6 +577,13 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
     eventCursor.current = 0;
     void Promise.all([loadDetail(selectedId), loadEvents(selectedId, true)]).finally(() => setDetailLoading(false));
   }, [hasDeviceKey, loadDetail, loadEvents, selectedId]);
+
+  // On the decision screen the loaded review always follows the item that needs an answer.
+  useEffect(() => {
+    if (initialView !== "home" || !hasDeviceKey) return;
+    const next = jobs.filter((job) => job.state === "AWAITING_APPROVAL" || job.state === "AWAITING_SELECTION").sort((left, right) => left.createdAt - right.createdAt)[0];
+    if (next) setSelectedId((current) => (current && jobs.some((job) => job.id === current && (job.state === "AWAITING_APPROVAL" || job.state === "AWAITING_SELECTION")) ? current : next.id));
+  }, [hasDeviceKey, initialView, jobs]);
 
   const candidates = useMemo(() => detail?.candidates || [], [detail]);
   const comparing = candidates.length > 1;
@@ -798,7 +807,13 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
     const query = search.trim().toLowerCase();
     return (stateFilter === "ALL" || job.state === stateFilter) && (!query || `${job.id} ${job.state} ${job.model || ""}`.toLowerCase().includes(query));
   }), [jobs, search, stateFilter]);
-  const pending = jobs.filter((job) => job.state === "AWAITING_APPROVAL").length;
+  // The phone opens on whatever is actually waiting for a decision, oldest first.
+  const attentionJobs = jobs
+    .filter((job) => job.state === "AWAITING_APPROVAL" || job.state === "AWAITING_SELECTION")
+    .sort((left, right) => left.createdAt - right.createdAt);
+  const attentionJob = attentionJobs.find((job) => job.id === selectedId) || attentionJobs[0] || null;
+  const workingJobs = jobs.filter((job) => job.state === "RUNNING" || job.state === "APPROVED");
+  const lastAnswered = jobs.filter((job) => job.state === "COMPLETE_REVIEW" || job.state === "COMPLETE_OPAQUE").sort((left, right) => (right.completedAt || 0) - (left.completedAt || 0))[0] || null;
   const usage = events.reduce((totals, event) => ({
     input: totals.input + (event.usage?.inputTokens || 0),
     output: totals.output + (event.usage?.outputTokens || 0),
@@ -852,26 +867,30 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
 
   return <main className="shell">
     <header className="topbar">
-      <div className="brand"><span className="brand-mark"><Image src="/brandmark.png" alt="" width={38} height={38} priority /></span><div><h1>Sol Gate</h1><p>Private review control plane</p></div></div>
-      <span className="status-pill">{online ? <span className={`status-dot ${health.ok ? "ok" : "warn"}`} /> : <WifiOff size={13} />}{online ? (health.ok ? "Online" : "Attention") : "Offline"}</span>
+      <div className="brand"><span className="brand-mark"><Image src="/brandmark.png" alt="" width={38} height={38} priority /></span><div><h1>Sol Gate</h1><p>{attentionJobs.length ? `${attentionJobs.length} waiting for you` : "Nothing waiting"}</p></div></div>
+      <div className="topbar-actions">
+        <span className="status-pill">{online ? <span className={`status-dot ${health.ok ? "ok" : "warn"}`} /> : <WifiOff size={13} />}{online ? (health.ok ? "Online" : "Attention") : "Offline"}</span>
+        <button className="btn icon" type="button" aria-expanded={menuOpen} aria-label={menuOpen ? "Close menu" : "Open menu"} title={menuOpen ? "Close menu" : "Open menu"} onClick={() => setMenuOpen((value) => !value)}>{menuOpen ? <X size={18} /> : <Menu size={18} />}</button>
+      </div>
     </header>
 
     <div className="content">
-      <section className="metrics" aria-label="System status">
-        <div className="metric"><span className="metric-label">Codex</span><span className="metric-value"><Link2 size={16} />{health.codexConnected ? "Connected" : "Not connected"}</span></div>
-        <div className="metric"><span className="metric-label">Pending</span><span className="metric-value"><Activity size={16} />{pending}</span></div>
-        <div className="metric"><span className="metric-label">History</span><span className="metric-value"><ListTree size={16} />{jobs.length}</span></div>
-        <div className="metric"><span className="metric-label">Storage</span><span className="metric-value"><HardDrive size={16} />{formatBytes(storage?.totalBytes)}</span></div>
-      </section>
-
-      <div className="toolbar dashboard-actions">
-        <button className="btn icon" type="button" onClick={() => void Promise.all([loadJobs(), loadStorage(), loadClients(), selectedId ? loadDetail(selectedId) : Promise.resolve()])} title="Refresh" aria-label="Refresh"><RefreshCw size={16} /></button>
-        {!health.codexConnected && codexLogin?.state !== "running" && codexLogin?.state !== "finalizing" && <button className="btn primary" type="button" onClick={() => void connectCodex()} disabled={busy === "codex"}><Link2 size={16} /> Connect Codex</button>}
-        <button className="btn" type="button" onClick={() => { if (!clientsOpen) void loadClients(); setClientsOpen((value) => !value); setClientToken(""); }}><Plus size={16} /> Claude clients {clients.filter((client) => !client.revokedAt).length}</button>
-        {/* Native navigation keeps the run configuration reachable even if hydration fails on mobile. */}
+      {menuOpen && <nav className="menu-sheet" aria-label="Sections">
+        {/* Native navigation is intentional so section changes survive a failed mobile hydration. */}
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        {runConfig && mainView !== "lab" && <a className="btn" href="/?view=lab"><SlidersHorizontal size={16} /> {runConfig.settings.model} · {activeProtocol?.label || runConfig.settings.protocolId}</a>}
-      </div>
+        <a className={mainView === "home" ? "active" : ""} href="/?view=home"><ShieldCheck size={17} /> <span>Decisions</span><em>{attentionJobs.length || "None"}</em></a>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a className={mainView === "reviews" ? "active" : ""} href="/?view=reviews"><ListTree size={17} /> <span>Review history</span><em>{jobs.length}</em></a>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a className={mainView === "lab" ? "active" : ""} href="/?view=lab"><SlidersHorizontal size={17} /> <span>Run configuration and lab</span><em>{runConfig?.settings.model || ""}</em></a>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a className={mainView === "storage" ? "active" : ""} href="/?view=storage"><Database size={17} /> <span>Storage</span><em>{formatBytes(storage?.totalBytes)}</em></a>
+        <button type="button" onClick={() => { if (!clientsOpen) void loadClients(); setClientsOpen((value) => !value); setClientToken(""); setMenuOpen(false); }}><Plus size={17} /> <span>Claude clients</span><em>{clients.filter((client) => !client.revokedAt).length}</em></button>
+        <button type="button" onClick={() => void Promise.all([loadHealth(), loadJobs(), loadStorage(), loadClients(), loadSettings(), selectedId ? loadDetail(selectedId) : Promise.resolve()])}><RefreshCw size={17} /> <span>Refresh</span><em /></button>
+        <div className="menu-foot"><span><Link2 size={13} /> Codex {health.codexConnected ? "connected" : "not connected"}</span><code>build {health.build || "unknown"}</code></div>
+      </nav>}
+
+      {!health.codexConnected && codexLogin?.state !== "running" && codexLogin?.state !== "finalizing" && <div className="toolbar dashboard-actions"><button className="btn primary" type="button" onClick={() => void connectCodex()} disabled={busy === "codex"}><Link2 size={16} /> Connect Codex</button></div>}
 
       {error && <p className="notice error">{error}</p>}
       {codexLogin?.state === "running" && codexLogin.deviceUrl && codexLogin.userCode && <section className="device-login" aria-label="Codex device login"><div className="device-login-heading"><div><span className="metric-label">Codex account</span><h2>Complete device sign-in</h2></div><span className="status-pill"><LoaderCircle className="spin" size={13} /> Waiting</span></div><div className="device-steps"><div className="device-step"><span className="step-number">1</span><div><strong>Open secure sign-in</strong><div className="device-actions"><a className="btn primary" href={codexLogin.deviceUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} /> Open OpenAI sign-in</a><button className="btn icon" title="Copy sign-in link" aria-label="Copy sign-in link" onClick={() => void navigator.clipboard.writeText(codexLogin.deviceUrl || "")}><Clipboard size={16} /></button></div></div></div><div className="device-step"><span className="step-number">2</span><div><strong>Enter one-time code</strong><div className="device-code-row"><code className="device-code">{codexLogin.userCode}</code><button className="btn icon" title="Copy code" aria-label="Copy code" onClick={() => void navigator.clipboard.writeText(codexLogin.userCode || "")}><Clipboard size={16} /></button></div></div></div></div></section>}
@@ -889,17 +908,47 @@ export function Dashboard({ initialView }: { initialView: "reviews" | "storage" 
         {clients.length > 0 && <div className="client-list">{clients.map((client) => <div className="client-row" key={client.id}><div><strong>{client.name}</strong><span>{client.revokedAt ? `Revoked ${new Date(client.revokedAt).toLocaleDateString()}` : client.lastUsedAt ? `Last used ${new Date(client.lastUsedAt).toLocaleString()}` : "Not used yet"}</span><code>{client.id}</code></div>{!client.revokedAt && <button className={`btn icon ${clientRevokeConfirm === client.id ? "danger" : ""}`} type="button" title={clientRevokeConfirm === client.id ? "Confirm revoke" : "Revoke client"} aria-label={clientRevokeConfirm === client.id ? "Confirm revoke" : "Revoke client"} onClick={() => void revokeClaudeClient(client.id)} disabled={busy === `client:${client.id}`}>{clientRevokeConfirm === client.id ? <Check size={16} /> : <Trash2 size={16} />}</button>}</div>)}</div>}
       </section>}
 
-      <nav className="view-tabs main-view-tabs" role="tablist" aria-label="Dashboard views">
-        {/* Native navigation is intentional so view switching survives a failed mobile hydration. */}
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        <a role="tab" aria-selected={mainView === "reviews"} className={mainView === "reviews" ? "active" : ""} href="/?view=reviews"><ListTree size={16} /> Reviews</a>
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        <a role="tab" aria-selected={mainView === "storage"} className={mainView === "storage" ? "active" : ""} href="/?view=storage"><Database size={16} /> Storage</a>
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        <a role="tab" aria-selected={mainView === "lab"} className={mainView === "lab" ? "active" : ""} href="/?view=lab"><Activity size={16} /> Lab</a>
-      </nav>
+      <div className="main-view-content">{mainView === "home" ? <section className="home-view">
+        {attentionJob ? <>
+          <div className="attention-head">
+            <div><span className="metric-label">{attentionJob.state === "AWAITING_SELECTION" ? "Choose a response" : "Approval needed"}</span><h2>{attentionJob.state === "AWAITING_SELECTION" ? "Which response goes to Claude?" : "Approve this packet?"}</h2><p>Requested {new Date(attentionJob.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {formatBytes(attentionJob.compressedBytes)}</p></div>
+            {attentionJobs.length > 1 && <button className="btn" type="button" onClick={() => { const index = attentionJobs.findIndex((job) => job.id === attentionJob.id); selectJob(attentionJobs[(index + 1) % attentionJobs.length].id); }}>Next of {attentionJobs.length}</button>}
+          </div>
 
-      <div className="main-view-content">{mainView === "reviews" ? (!jobsLoaded ? <section className="panel loading-panel"><LoaderCircle className="spin" size={26} /><strong>Loading reviews</strong></section> : jobs.length === 0 ? <section className="panel no-reviews-panel"><FileText size={28} /><h2>No reviews stored</h2><p>The next review submitted with <code>/sol</code> will appear here.</p></section> : <section className="workspace">
+          {!detail || detail.job.id !== attentionJob.id ? <div className="panel empty"><div><LoaderCircle className="spin" size={28} /><p>Opening the review.</p></div></div> : detail.job.state === "AWAITING_APPROVAL" ? <>
+            <div className="panel decision-card">
+              {detail.packetQuality && <div className="decision-facts"><div><span>Packet quality</span><strong>{detail.packetQuality.score}/100</strong></div><div><span>Sections</span><strong>{detail.packetQuality.sectionsPresent}/{detail.packetQuality.sectionsRequired}</strong></div><div><span>Sources</span><strong>{detail.packetQuality.sourceIds}</strong></div><div><span>Citations</span><strong>{detail.packetQuality.sourceReferences}</strong></div></div>}
+              {detail.packetQuality && detail.packetQuality.issues.length > 0 && <ul className="quality-issues">{detail.packetQuality.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
+              <details className="disclosure" open><summary>Read the packet</summary><pre className="code-block packet-block">{detail.preview || "Packet unavailable."}</pre>{detail.packetTruncated && <p className="notice">Packet preview limited to 200 KB.</p>}</details>
+              <details className="disclosure"><summary>Technical details</summary><div className="detail-rows"><div><span>Review</span><code>{detail.job.id}</code></div><div><span>Packet hash</span><code>{detail.job.packetHash.slice(0, 24)}</code></div><div><span>Configuration</span><code>{runConfig ? `${runConfig.settings.model} / ${runConfig.settings.reasoning} / ${activeProtocol?.version || runConfig.settings.protocolId}` : "Loading"}</code></div><div><span>Expires</span><code>{new Date(detail.job.expiresAt).toLocaleString()}</code></div></div></details>
+            </div>
+            <div className="action-bar">
+              <button className="btn primary big" type="button" onClick={() => void decision("approve")} disabled={Boolean(busy)}>{busy === "approve" ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />} Approve</button>
+              {Boolean(runConfig?.settings.panel.length) && <button className="btn big" type="button" onClick={() => void decision("approve_panel")} disabled={Boolean(busy)}>{busy === "approve_panel" ? <LoaderCircle className="spin" size={17} /> : <Layers size={17} />} Approve with {runConfig?.settings.panel.length} candidates</button>}
+              <button className="btn danger big" type="button" onClick={() => void decision("reject")} disabled={Boolean(busy)}><X size={17} /> Reject</button>
+            </div>
+          </> : <>
+            <div className="panel decision-note"><LockKeyhole size={15} /><span>Nothing has reached Claude yet. Release one response, or release nothing. This decision is final for the packet.</span></div>
+            <div className="candidate-cards">{candidates.filter((candidate) => !candidate.postRelease).map((candidate) => {
+              const summary = parseResult(candidate.result || null);
+              return <article className={`panel candidate-card ${candidate.releasable ? "" : "blocked"}`} key={candidate.id}>
+                <header><div><strong>{candidate.model}</strong><span>{candidate.reasoning} · {candidate.protocolVersion}</span></div><span className={`state-badge ${candidate.releasable ? "state-complete_review" : "state-complete_opaque"}`}>{candidate.state === "COMPLETE" ? outcomeLabel(candidate.internalCode) : candidate.state === "RUNNING" ? "Running" : "Queued"}</span></header>
+                {summary ? <><div className="candidate-verdict"><strong>{summary.verdict}</strong>{summary.confidence && <span>{summary.confidence} confidence</span>}</div><p className="candidate-assessment">{summary.assessment}</p><details className="disclosure"><summary>Full response</summary><ResultCard result={summary} /></details></> : <p className="candidate-assessment muted">{candidate.state === "COMPLETE" ? "This run produced nothing releasable." : "Still running."}</p>}
+                <button className={`btn big ${releaseConfirm === candidate.id ? "primary" : ""}`} type="button" disabled={!candidate.releasable || Boolean(busy)} onClick={() => void releaseSelection(candidate.id)}>{busy === `release:${candidate.id}` ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />} {releaseConfirm === candidate.id ? "Confirm: send this to Claude" : "Send this to Claude"}</button>
+              </article>;
+            })}</div>
+            <div className="action-bar"><button className={`btn big ${releaseConfirm === "none" ? "danger" : ""}`} type="button" disabled={Boolean(busy)} onClick={() => void releaseSelection(null)}><X size={17} /> {releaseConfirm === "none" ? "Confirm: send nothing" : "Send nothing to Claude"}</button></div>
+          </>}
+        </> : <div className="panel all-clear">
+          <ShieldCheck size={30} />
+          <h2>Nothing needs you</h2>
+          <p>{workingJobs.length ? `${workingJobs.length} review${workingJobs.length === 1 ? " is" : "s are"} running. This screen opens on the next decision by itself.` : "The next packet submitted with /sol appears here."}</p>
+          {lastAnswered && <div className="last-answered"><span>Last answered {new Date(lastAnswered.completedAt || lastAnswered.updatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span><strong>{outcomeLabel(lastAnswered.internalCode)}</strong></div>}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a className="btn" href="/?view=reviews"><ListTree size={16} /> Open review history</a>
+        </div>}
+        {workingJobs.length > 0 && attentionJob && <div className="panel working-strip"><LoaderCircle className="spin" size={15} /><span>{workingJobs.length} other review{workingJobs.length === 1 ? "" : "s"} running.</span></div>}
+      </section> : mainView === "reviews" ?(!jobsLoaded ? <section className="panel loading-panel"><LoaderCircle className="spin" size={26} /><strong>Loading reviews</strong></section> : jobs.length === 0 ? <section className="panel no-reviews-panel"><FileText size={28} /><h2>No reviews stored</h2><p>The next review submitted with <code>/sol</code> will appear here.</p></section> : <section className="workspace">
         <div className="panel history-panel">
           <div className="panel-header"><h2>Review history</h2><span className="status-pill">{filteredJobs.length}</span></div>
           <div className="history-filters"><label className="search-field"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search reviews" aria-label="Search reviews" /></label><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} aria-label="Filter review state"><option value="ALL">All states</option><option value="AWAITING_APPROVAL">Pending approval</option><option value="RUNNING">Running</option><option value="COMPLETE_REVIEW">Complete review</option><option value="COMPLETE_OPAQUE">Not released</option><option value="REJECTED">Rejected</option></select></div>

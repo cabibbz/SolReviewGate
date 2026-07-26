@@ -105,6 +105,60 @@ button { cursor: pointer; }
 .metric-label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
 .metric-value { display: flex; min-width: 0; align-items: center; gap: 8px; margin-top: 7px; overflow-wrap: anywhere; font-size: 15px; font-weight: 700; }
 
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.menu-sheet { display: grid; margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.menu-sheet a, .menu-sheet button { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 12px 15px; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); background: transparent; font-size: 14px; font-weight: 700; text-align: left; text-decoration: none; }
+.menu-sheet a.active { background: #f2f6f3; box-shadow: inset 3px 0 0 var(--green); }
+.menu-sheet em { color: var(--muted); font-size: 12px; font-style: normal; font-weight: 700; overflow-wrap: anywhere; }
+.menu-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; background: #fafbfa; }
+.menu-foot span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.menu-foot code { color: var(--muted); font-size: 11px; }
+
+.home-view { display: grid; gap: 14px; margin-top: 16px; }
+.attention-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.attention-head h2 { margin: 5px 0 0; font-size: 21px; line-height: 1.25; }
+.attention-head p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.decision-card { padding: 16px; }
+.decision-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: -16px -16px 14px; border-bottom: 1px solid var(--line); background: #fafbfa; }
+.decision-facts > div { padding: 12px; border-right: 1px solid var(--line); }
+.decision-facts > div:last-child { border-right: 0; }
+.decision-facts span { display: block; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.decision-facts strong { display: block; margin-top: 5px; font-size: 16px; }
+.disclosure { margin-top: 12px; border: 1px solid var(--line); border-radius: 7px; }
+.disclosure > summary { min-height: 46px; padding: 13px 14px; color: var(--ink); font-size: 13px; font-weight: 750; cursor: pointer; list-style: none; }
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary::after { float: right; content: "+"; color: var(--muted); font-size: 17px; line-height: 1; }
+.disclosure[open] > summary { border-bottom: 1px solid var(--line); }
+.disclosure[open] > summary::after { content: "\2212"; }
+.disclosure > *:not(summary) { margin: 0; padding: 12px 14px; }
+.disclosure .code-block { border: 0; border-radius: 0; }
+.detail-rows { display: grid; gap: 9px; }
+.detail-rows > div { display: grid; gap: 3px; }
+.detail-rows span { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.detail-rows code { overflow-wrap: anywhere; font-size: 11px; }
+.action-bar { display: grid; gap: 9px; position: sticky; bottom: 0; z-index: 3; padding: 12px 0 14px; background: linear-gradient(to bottom, rgba(244, 246, 244, 0.75), var(--bg) 32%); }
+.btn.big { min-height: 52px; font-size: 15px; }
+.decision-note { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; color: #4d577a; background: #edf0f8; font-size: 12px; line-height: 1.5; }
+.candidate-cards { display: grid; gap: 12px; }
+.candidate-card { padding: 15px; }
+.candidate-card.blocked { opacity: 0.72; }
+.candidate-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.candidate-card > header strong { display: block; overflow-wrap: anywhere; font-size: 15px; }
+.candidate-card > header span:not(.state-badge) { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.candidate-verdict { display: flex; align-items: baseline; gap: 10px; }
+.candidate-verdict strong { font-size: 17px; }
+.candidate-verdict span { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.candidate-assessment { margin: 8px 0 0; font-size: 13px; line-height: 1.55; }
+.candidate-assessment.muted { color: var(--muted); }
+.candidate-card .btn.big { width: 100%; margin-top: 13px; }
+.all-clear { display: grid; justify-items: center; gap: 11px; padding: 40px 20px; color: var(--muted); text-align: center; }
+.all-clear h2 { margin: 0; color: var(--ink); font-size: 19px; }
+.all-clear p { margin: 0; max-width: 380px; font-size: 13px; line-height: 1.55; }
+.last-answered { display: grid; gap: 3px; margin-top: 4px; }
+.last-answered span { font-size: 11px; }
+.last-answered strong { color: var(--ink); font-size: 13px; }
+.working-strip { display: flex; align-items: center; gap: 9px; padding: 12px 15px; color: var(--muted); font-size: 12px; }
+
 .view-tabs, .detail-tabs { display: flex; width: fit-content; max-width: 100%; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); overflow-x: auto; }
 .view-tabs button, .view-tabs a, .detail-tabs button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 8px 13px; border: 0; border-right: 1px solid var(--line); color: var(--muted); background: transparent; font-size: 12px; font-weight: 750; text-decoration: none; white-space: nowrap; }
 .view-tabs button:last-child, .view-tabs a:last-child, .detail-tabs button:last-child { border-right: 0; }
@@ -385,6 +439,11 @@ button { cursor: pointer; }
   .storage-metrics > div:last-child { grid-column: 1 / -1; border-bottom: 0; }
   .retention-control { grid-template-columns: 90px minmax(0, 1fr); }
   .lab-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .decision-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .decision-facts > div { border-bottom: 1px solid var(--line); }
+  .decision-facts > div:nth-child(2n) { border-right: 0; }
+  .decision-facts > div:nth-last-child(-n + 2) { border-bottom: 0; }
+  .attention-head h2 { font-size: 19px; }
   .run-config-facts, .candidate-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .run-config-facts > div, .candidate-facts > div { border-bottom: 1px solid var(--line); }
   .run-config-facts > div:nth-child(2n), .candidate-facts > div:nth-child(2n) { border-right: 0; }
