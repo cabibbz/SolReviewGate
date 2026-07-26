@@ -1,5 +1,5 @@
 import { verifyAdminRequest } from "@/lib/admin-auth";
-import { adminGetJob, adminLiveLog, adminRawOutput, adminResult, deleteJob, readPacket } from "@/lib/jobs";
+import { adminGetJob, adminLiveLog, adminRawOutput, adminResult, candidateOutput, deleteJob, listCandidates, readPacket } from "@/lib/jobs";
 import { json, opaqueError } from "@/lib/http";
 import { pollReview, readLiveReview } from "@/lib/sandbox-runtime";
 import { analyzePacketQuality } from "@/lib/packet-quality";
@@ -21,11 +21,15 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   } catch {
     preview = null;
   }
-  const [raw, result, retainedLive] = await Promise.all([adminRawOutput(id), adminResult(id), adminLiveLog(id)]);
+  const [raw, result, retainedLive, records] = await Promise.all([adminRawOutput(id), adminResult(id), adminLiveLog(id), listCandidates(id)]);
   const live = job.state === "RUNNING" ? await readLiveReview(id) : retainedLive;
+  const candidates = await Promise.all(records.map(async (candidate) => ({
+    ...candidate,
+    result: candidate.state === "COMPLETE" ? await candidateOutput(id, candidate.id) : null,
+  })));
   const { clientTokenHash, ...visible } = job;
   void clientTokenHash;
-  return json({ job: visible, preview, packetTruncated: Boolean(preview && Buffer.byteLength(preview, "utf8") >= 200_000), packetQuality, raw, result, live });
+  return json({ job: visible, preview, packetTruncated: Boolean(preview && Buffer.byteLength(preview, "utf8") >= 200_000), packetQuality, raw, result, live, candidates });
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {

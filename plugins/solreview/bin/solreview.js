@@ -117,7 +117,7 @@ async function main() {
     headers: { "x-sol-capability": initialized.capability },
   }, 30_000, 2);
 
-  const deadline = Date.now() + Number(process.env.SOL_GATE_TIMEOUT_MS || 20 * 60 * 1000);
+  const deadline = Date.now() + Number(process.env.SOL_GATE_TIMEOUT_MS || 60 * 60 * 1000);
   const pollMs = Math.max(25, Number(process.env.SOL_GATE_POLL_MS || 2_000));
   while (Date.now() < deadline) {
     const result = await request(`${url}/api/client/jobs/${encodeURIComponent(initialized.jobId)}/result`, {

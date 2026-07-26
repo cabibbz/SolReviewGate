@@ -43,6 +43,19 @@ The model id must match `^[A-Za-z0-9][A-Za-z0-9._:-]{1,63}$`, so it cannot begin
 
 The policy text, its SHA 256, the model, and the reasoning effort are recorded on the job and shown only in the paired PWA. Neither the protocol selection nor the policy is released to the reviewed client.
 
+## Candidate Selection
+
+A comparison set produces several complete reviews for one packet. Releasing one of them is a phone signed request, and the server enforces four rules:
+
+1. A packet is answered exactly once. Selection is reachable only while the job waits for it, so no answer can be replaced after the client has one.
+2. Only a candidate that passed every release check can be selected. A withheld, blocked, or failed candidate cannot be released even by an explicit request.
+3. A candidate created after the packet was answered is permanently excluded from selection.
+4. Releasing nothing is always available and produces the same fixed terminal response as any other non release path.
+
+Unselected candidates, their transcripts, and their full responses stay in the authenticated PWA. The client cannot learn that a comparison happened, how many candidates ran, or what any of them said.
+
+Two consequences are worth stating plainly. A released review from a comparison set is an operator selected review, so its verdict no longer represents one configuration behaving independently; the Alignment Lab keeps every candidate so the unselected outcomes remain visible. Selection time is also operator time, which makes the response latency of a compared packet reflect human deliberation rather than model work alone.
+
 ## Stored Data
 
 Review packets, event streams, raw candidates, and results are encrypted with AES 256 GCM before Redis storage. Ciphertext is bound to its logical key through authenticated additional data. Metadata needed for job indexing remains visible to the server store.

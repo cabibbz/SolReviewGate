@@ -37,7 +37,8 @@ Named clients use independent token hashes and an atomic Redis index. Revoking o
 | `UPLOADING` | Client creates a job | `AWAITING_APPROVAL`, `EXPIRED` |
 | `AWAITING_APPROVAL` | Packet integrity checks pass | `APPROVED`, `REJECTED`, `EXPIRED` |
 | `APPROVED` | Phone signs approval | `RUNNING`, `COMPLETE_OPAQUE` |
-| `RUNNING` | Sandbox review starts | `COMPLETE_REVIEW`, `COMPLETE_OPAQUE` |
+| `RUNNING` | Sandbox review starts | `AWAITING_SELECTION`, `COMPLETE_REVIEW`, `COMPLETE_OPAQUE` |
+| `AWAITING_SELECTION` | A comparison set finished with more than one candidate | `COMPLETE_REVIEW`, `COMPLETE_OPAQUE` |
 | `COMPLETE_REVIEW` | Every release check passes | Terminal |
 | `COMPLETE_OPAQUE` | Model, gate, worker, auth, or infrastructure path does not release | Terminal |
 | `REJECTED` | Phone rejects the packet | Terminal |
@@ -92,6 +93,23 @@ The reviewing model, the reasoning effort, and the alignment protocol are runtim
 `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` supply the defaults for a deployment that has never been configured from the phone, and a stored value that no longer validates falls back to them instead of failing the review.
 
 `startReview` resolves the configuration once, at approval, and passes it to the fresh Sandbox. A running review therefore keeps the configuration it started with, and a change applies to the next approved packet.
+
+## Comparison Candidates
+
+One approval creates one candidate per configuration. A candidate is a complete execution of the packet: its own Sandbox, its own policy, its own release gate result, and its own retained transcript, response, and outcome code.
+
+| Property | Behavior |
+| --- | --- |
+| Order | Candidates run one at a time. Polling starts the next queued candidate when the previous one finishes |
+| Isolation | Each candidate gets a fresh Sandbox from the Codex snapshot. No candidate sees another |
+| Gate | Every candidate passes the release gate independently. A blocked or withheld candidate cannot be selected |
+| Selection | A single candidate answers the packet automatically. Two or more wait in `AWAITING_SELECTION` for the phone |
+| Finality | Releasing a candidate, or releasing nothing, answers the packet once. `releaseCandidate` is reachable only from `AWAITING_SELECTION` |
+| After release | A candidate created after the answer is marked `postRelease` and is excluded from selection permanently |
+
+Each finished candidate also appends a compact run summary to the job record, so the Alignment Lab can group model and protocol outcomes without reading every candidate payload.
+
+An unanswered packet stays valid for `SOL_JOB_TTL_SECONDS`. If the client stops waiting before a selection, it receives the fixed terminal response, and the candidates remain readable on the phone.
 
 ## Protocol Catalog
 

@@ -3,14 +3,17 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { reviewProtocols, resolveProtocol } from "../../lib/protocols";
 import {
+  activeConfig,
   defaultReviewSettings,
   getReviewSettings,
+  maxPanelConfigs,
   modelChoices,
   normalizeModel,
   normalizeProtocolId,
   normalizeReasoning,
   reviewRuntime,
   reviewSettingsView,
+  runConfigs,
   setReviewSettings,
   SettingsError,
 } from "../../lib/settings";
@@ -30,7 +33,7 @@ test("unconfigured deployments review with the environment defaults", async () =
 test("stores a model, effort, and protocol chosen in the PWA", async () => {
   const store = getStore();
   const saved = await setReviewSettings({ model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" }, store);
-  assert.deepEqual(saved, { model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" });
+  assert.deepEqual(saved, { model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict", panel: [] });
   assert.deepEqual(await getReviewSettings(store), saved);
   const { protocol } = await reviewRuntime(store);
   assert.equal(protocol.version, "alignment-strict-v1");
@@ -41,7 +44,7 @@ test("applies a partial change without dropping the other selections", async () 
   const store = getStore();
   await setReviewSettings({ model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" }, store);
   const patched = await setReviewSettings({ protocolId: "control" }, store);
-  assert.deepEqual(patched, { model: "gpt-5.6-codex", reasoning: "high", protocolId: "control" });
+  assert.deepEqual(patched, { model: "gpt-5.6-codex", reasoning: "high", protocolId: "control", panel: [] });
 });
 
 test("rejects model names that could reach the Codex command line", async () => {
@@ -79,6 +82,30 @@ test("offers the deployment default, extra configured models, and the active cus
   } finally {
     delete process.env.SOL_MODEL_CHOICES;
   }
+});
+
+test("stores a comparison set and falls back to the single active configuration", async () => {
+  const store = getStore();
+  const settings = await setReviewSettings({
+    panel: [
+      { model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline" },
+      { model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" },
+    ],
+  }, store);
+  assert.equal(settings.panel.length, 2);
+  assert.deepEqual(runConfigs(settings, true).map((entry) => entry.protocolId), ["baseline", "strict"]);
+  assert.deepEqual(runConfigs(settings, false), [activeConfig(settings)]);
+  assert.deepEqual(runConfigs({ ...settings, panel: [] }, true), [activeConfig(settings)]);
+  assert.deepEqual(await setReviewSettings({ panel: [] }, store), { ...activeConfig(settings), panel: [] });
+});
+
+test("rejects an oversized or invalid comparison set", async () => {
+  const store = getStore();
+  const entry = { model: "gpt-5.6-sol", reasoning: "medium" as const, protocolId: "baseline" };
+  await assert.rejects(() => setReviewSettings({ panel: Array.from({ length: maxPanelConfigs + 1 }, () => entry) }, store), (error: unknown) => error instanceof SettingsError && error.code === "INVALID_PANEL");
+  await assert.rejects(() => setReviewSettings({ panel: [{ ...entry, model: "not a model" }] }, store), (error: unknown) => error instanceof SettingsError && error.code === "INVALID_MODEL");
+  await assert.rejects(() => setReviewSettings({ panel: [{ ...entry, protocolId: "missing" }] }, store), (error: unknown) => error instanceof SettingsError && error.code === "INVALID_PROTOCOL");
+  assert.deepEqual((await getReviewSettings(store)).panel, []);
 });
 
 test("exposes every protocol choice with a distinct recorded version", async () => {

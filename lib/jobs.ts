@@ -3,7 +3,7 @@ import { config } from "@/lib/config";
 import { decryptBuffer, decryptText, encryptBuffer, encryptText, randomToken, safeEqual, sha256 } from "@/lib/crypto";
 import { OPAQUE_OUTPUT } from "@/lib/gate";
 import { getStore, type Store } from "@/lib/store";
-import type { ClientRecord, JobState, ReviewEvent, ReviewJob } from "@/lib/types";
+import type { ClientRecord, JobState, ReviewCandidate, ReviewEvent, ReviewJob, RunSummary } from "@/lib/types";
 
 const jobKey = (id: string) => `sol:job:${id}`;
 const chunkKey = (id: string, index: number) => `sol:job:${id}:chunk:${index}`;
@@ -11,6 +11,11 @@ const resultKey = (id: string) => `sol:job:${id}:result`;
 const rawKey = (id: string) => `sol:job:${id}:raw`;
 const eventsKey = (id: string) => `sol:job:${id}:events`;
 const liveKey = (id: string) => `sol:job:${id}:live`;
+const candidateListKey = (id: string) => `sol:job:${id}:candidates`;
+const candidateKey = (id: string, candidateId: string) => `sol:job:${id}:candidate:${candidateId}`;
+const candidateOutputKey = (id: string, candidateId: string) => `sol:job:${id}:candidate:${candidateId}:output`;
+const candidateRawKey = (id: string, candidateId: string) => `sol:job:${id}:candidate:${candidateId}:raw`;
+const candidateLiveKey = (id: string, candidateId: string) => `sol:job:${id}:candidate:${candidateId}:live`;
 const clientKey = (hash: string) => `sol:client:${hash}`;
 const clientIdKey = (id: string) => `sol:client-id:${id}`;
 const outstandingKey = (clientId: string) => `sol:client:${clientId}:outstanding`;
@@ -102,6 +107,137 @@ export async function adminLiveLog(id: string, store: Store = getStore()): Promi
   const key = liveKey(id);
   const encrypted = await store.get<string>(key);
   return encrypted ? decryptText(encrypted, key) : null;
+}
+
+async function withLock<T>(key: string, store: Store, work: () => Promise<T>): Promise<T> {
+  let locked = false;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    locked = await store.setIfAbsent(key, true, 10);
+    if (locked) break;
+    await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)));
+  }
+  if (!locked) throw new JobError("CANDIDATE_LOCKED");
+  try {
+    return await work();
+  } finally {
+    await store.del(key);
+  }
+}
+
+export async function listCandidates(id: string, store: Store = getStore()): Promise<ReviewCandidate[]> {
+  const ids = (await store.get<string[]>(candidateListKey(id))) || [];
+  const records = await Promise.all(ids.map((candidateId) => store.get<ReviewCandidate>(candidateKey(id, candidateId))));
+  return records.filter((candidate): candidate is ReviewCandidate => Boolean(candidate)).sort((left, right) => left.index - right.index);
+}
+
+export async function getCandidate(id: string, candidateId: string, store: Store = getStore()): Promise<ReviewCandidate | null> {
+  if (!/^[A-Za-z0-9_-]{4,128}$/.test(candidateId)) return null;
+  return store.get<ReviewCandidate>(candidateKey(id, candidateId));
+}
+
+export async function createCandidate(
+  id: string,
+  config: { model: string; reasoning: string; protocolId: string; protocolVersion: string },
+  postRelease: boolean,
+  store: Store = getStore(),
+): Promise<ReviewCandidate> {
+  return withLock(`${candidateListKey(id)}:lock`, store, async () => {
+    const job = await store.get<ReviewJob>(jobKey(id));
+    if (!job) throw new JobError("NOT_FOUND");
+    const ttl = ttlFor(job);
+    const ids = (await store.get<string[]>(candidateListKey(id))) || [];
+    const index = ids.length + 1;
+    const candidate: ReviewCandidate = {
+      id: `c${index}-${randomToken(6)}`,
+      jobId: id,
+      index,
+      label: `Candidate ${index}`,
+      state: "QUEUED",
+      createdAt: now(),
+      postRelease,
+      ...config,
+    };
+    await store.set(candidateKey(id, candidate.id), candidate, ttl);
+    await store.set(candidateListKey(id), [...ids, candidate.id], ttl);
+    await store.set(jobKey(id), { ...job, candidateCount: index, updatedAt: now() }, ttl);
+    return candidate;
+  });
+}
+
+export async function updateCandidate(id: string, candidateId: string, patch: Partial<ReviewCandidate>, store: Store = getStore()): Promise<ReviewCandidate> {
+  const job = await store.get<ReviewJob>(jobKey(id));
+  const candidate = await getCandidate(id, candidateId, store);
+  if (!job || !candidate) throw new JobError("NOT_FOUND");
+  const next: ReviewCandidate = { ...candidate, ...patch };
+  await store.set(candidateKey(id, candidateId), next, ttlFor(job));
+  return next;
+}
+
+export async function saveCandidateLive(id: string, candidateId: string, value: string, ttlSeconds: number, store: Store = getStore()): Promise<void> {
+  const key = candidateLiveKey(id, candidateId);
+  await store.set(key, encryptText(value.slice(-500_000), key), ttlSeconds);
+}
+
+export async function candidateLive(id: string, candidateId: string, store: Store = getStore()): Promise<string | null> {
+  const key = candidateLiveKey(id, candidateId);
+  const encrypted = await store.get<string>(key);
+  return encrypted ? decryptText(encrypted, key) : null;
+}
+
+export async function candidateOutput(id: string, candidateId: string, store: Store = getStore()): Promise<string | null> {
+  const key = candidateOutputKey(id, candidateId);
+  const encrypted = await store.get<string>(key);
+  return encrypted ? decryptText(encrypted, key) : null;
+}
+
+export async function candidateRaw(id: string, candidateId: string, store: Store = getStore()): Promise<string | null> {
+  const key = candidateRawKey(id, candidateId);
+  const encrypted = await store.get<string>(key);
+  return encrypted ? decryptText(encrypted, key) : null;
+}
+
+/** Records one finished candidate. Nothing here releases anything to the client. */
+export async function saveCandidateResult(
+  id: string,
+  candidateId: string,
+  outcome: { output: string; raw: string; releasable: boolean; internalCode: string },
+  store: Store = getStore(),
+): Promise<ReviewCandidate> {
+  const job = await store.get<ReviewJob>(jobKey(id));
+  const candidate = await getCandidate(id, candidateId, store);
+  if (!job || !candidate) throw new JobError("NOT_FOUND");
+  const ttl = ttlFor(job);
+  await store.set(candidateOutputKey(id, candidateId), encryptText(outcome.output, candidateOutputKey(id, candidateId)), ttl);
+  await store.set(candidateRawKey(id, candidateId), encryptText(outcome.raw, candidateRawKey(id, candidateId)), ttl);
+  const completed = await updateCandidate(id, candidateId, {
+    state: "COMPLETE",
+    completedAt: now(),
+    internalCode: outcome.internalCode,
+    releasable: outcome.releasable,
+  }, store);
+  const summary: RunSummary = {
+    candidateId,
+    model: completed.model,
+    reasoning: completed.reasoning,
+    protocolVersion: completed.protocolVersion,
+    internalCode: outcome.internalCode,
+    releasable: outcome.releasable,
+    postRelease: Boolean(completed.postRelease),
+  };
+  const current = await store.get<ReviewJob>(jobKey(id));
+  if (current) {
+    const runs = [...(current.runs || []).filter((run) => run.candidateId !== candidateId), summary].slice(-24);
+    await store.set(jobKey(id), { ...current, runs, updatedAt: now() }, ttlFor(current));
+  }
+  await appendJobEvents(id, [{
+    id: `candidate:${candidateId}:complete`,
+    at: completed.completedAt || now(),
+    source: "gate",
+    level: outcome.releasable ? "success" : "warning",
+    title: `${completed.label} finished`,
+    message: `${completed.model} / ${completed.reasoning} / ${completed.protocolVersion}: ${outcome.internalCode}`,
+  }], store, ttl).catch(() => undefined);
+  return completed;
 }
 
 export async function registerClient(name: string, store: Store = getStore()): Promise<{ client: ClientRecord; token: string }> {
@@ -297,6 +433,19 @@ async function retainPacketChunks(job: ReviewJob, ttlSeconds: number, store: Sto
   }
 }
 
+async function retainCandidates(job: ReviewJob, ttlSeconds: number, store: Store): Promise<void> {
+  const candidates = await listCandidates(job.id, store);
+  if (!candidates.length) return;
+  await store.set(candidateListKey(job.id), candidates.map((candidate) => candidate.id), ttlSeconds);
+  for (const candidate of candidates) {
+    await store.set(candidateKey(job.id, candidate.id), candidate, ttlSeconds);
+    for (const key of [candidateOutputKey(job.id, candidate.id), candidateRawKey(job.id, candidate.id), candidateLiveKey(job.id, candidate.id)]) {
+      const value = await store.get<string>(key);
+      if (value !== null) await store.set(key, value, ttlSeconds);
+    }
+  }
+}
+
 function gateEvent(internalCode: string, opaque: boolean): Pick<ReviewEvent, "title" | "message"> {
   const outcomes: Record<string, Pick<ReviewEvent, "title" | "message">> = {
     RELEASED: { title: "Review passed every release check", message: "The complete Codex review is ready to read." },
@@ -310,13 +459,14 @@ function gateEvent(internalCode: string, opaque: boolean): Pick<ReviewEvent, "ti
     START_FAILED: { title: "Review failed to start", message: "The isolated Codex review could not be started." },
     POLL_FAILED: { title: "Review became unavailable", message: "The running review could not be recovered or completed." },
     AUTH_UNAVAILABLE: { title: "Codex authentication unavailable", message: "The authenticated Codex snapshot was unavailable." },
+    OPERATOR_WITHHELD: { title: "Operator released no candidate", message: "Every candidate stayed on this phone. The client received the fixed terminal response." },
   };
   return outcomes[internalCode] || (opaque
     ? { title: "Review was not released", message: `Unclassified outcome: ${internalCode}.` }
     : outcomes.RELEASED);
 }
 
-export async function saveTerminalResult(id: string, output: string, raw: string, opaque: boolean, internalCode: string, store: Store = getStore()): Promise<ReviewJob> {
+export async function saveTerminalResult(id: string, output: string, raw: string, opaque: boolean, internalCode: string, store: Store = getStore(), patch: Partial<ReviewJob> = {}): Promise<ReviewJob> {
   const job = await store.get<ReviewJob>(jobKey(id));
   if (!job) throw new JobError("NOT_FOUND");
   const completedAt = now();
@@ -325,7 +475,9 @@ export async function saveTerminalResult(id: string, output: string, raw: string
   await store.set(resultKey(id), encryptText(opaque ? OPAQUE_OUTPUT : output, resultKey(id)), retainedSeconds);
   await store.set(rawKey(id), encryptText(raw, rawKey(id)), retainedSeconds);
   await retainPacketChunks(job, retainedSeconds, store);
-  const next = await transitionJob(id, ["RUNNING", "FILTERING", "APPROVED", "CLAIMED"], opaque ? "COMPLETE_OPAQUE" : "COMPLETE_REVIEW", {
+  await retainCandidates(job, retainedSeconds, store);
+  const next = await transitionJob(id, ["RUNNING", "AWAITING_SELECTION", "FILTERING", "APPROVED", "CLAIMED"], opaque ? "COMPLETE_OPAQUE" : "COMPLETE_REVIEW", {
+    ...patch,
     completedAt,
     releaseAt,
     internalCode,
@@ -338,6 +490,38 @@ export async function saveTerminalResult(id: string, output: string, raw: string
   ], store, retainedSeconds).catch(() => undefined);
   await store.del(outstandingKey(job.clientId));
   return next;
+}
+
+/** Answers the packet with one candidate's outcome, whatever that outcome was. */
+export async function publishCandidate(id: string, candidateId: string, store: Store = getStore()): Promise<ReviewJob> {
+  const candidate = await getCandidate(id, candidateId, store);
+  if (!candidate || candidate.state !== "COMPLETE") throw new JobError("INVALID_CANDIDATE");
+  const [output, raw] = await Promise.all([candidateOutput(id, candidateId, store), candidateRaw(id, candidateId, store)]);
+  const opaque = !candidate.releasable || !output || output === OPAQUE_OUTPUT;
+  return saveTerminalResult(id, opaque ? OPAQUE_OUTPUT : output, raw || "", opaque, candidate.internalCode || "GATE_EMPTY", store, {
+    selectedCandidateId: candidate.id,
+    model: candidate.model,
+    reasoning: candidate.reasoning,
+    protocolVersion: candidate.protocolVersion,
+    policyHash: candidate.policyHash,
+    schemaHash: candidate.schemaHash,
+    workerHash: candidate.workerHash,
+    codexVersion: candidate.codexVersion,
+  });
+}
+
+/**
+ * Operator selection. Releases one finished candidate to the waiting client, or releases nothing.
+ * A packet is answered exactly once, so this is reachable only while the job waits for a selection.
+ */
+export async function releaseCandidate(id: string, candidateId: string | null, store: Store = getStore()): Promise<ReviewJob> {
+  const job = await store.get<ReviewJob>(jobKey(id));
+  if (!job) throw new JobError("NOT_FOUND");
+  if (job.state !== "AWAITING_SELECTION") throw new JobError("INVALID_STATE");
+  if (!candidateId) return saveTerminalResult(id, OPAQUE_OUTPUT, "The operator released no candidate.", true, "OPERATOR_WITHHELD", store);
+  const candidate = await getCandidate(id, candidateId, store);
+  if (!candidate || candidate.state !== "COMPLETE" || !candidate.releasable || candidate.postRelease) throw new JobError("INVALID_CANDIDATE");
+  return publishCandidate(id, candidateId, store);
 }
 
 export async function rejectJob(id: string, store: Store = getStore()): Promise<void> {
@@ -373,9 +557,17 @@ export async function deleteJob(id: string, store: Store = getStore()): Promise<
   const job = await store.get<ReviewJob>(jobKey(id));
   if (!job) throw new JobError("NOT_FOUND");
   if (!["COMPLETE_REVIEW", "COMPLETE_OPAQUE", "REJECTED", "EXPIRED"].includes(job.state)) throw new JobError("JOB_ACTIVE");
+  const candidates = await listCandidates(id, store);
   await store.del(
     jobKey(id), resultKey(id), rawKey(id), eventsKey(id), liveKey(id), `${eventsKey(id)}:lock`,
     `sol:job:${id}:poll-lock`, outstandingKey(job.clientId),
+    candidateListKey(id), `${candidateListKey(id)}:lock`,
+    ...candidates.flatMap((candidate) => [
+      candidateKey(id, candidate.id),
+      candidateOutputKey(id, candidate.id),
+      candidateRawKey(id, candidate.id),
+      candidateLiveKey(id, candidate.id),
+    ]),
     ...Array.from({ length: job.chunkCount }, (_, index) => chunkKey(id, index)),
   );
   await store.removePending(id);
@@ -385,11 +577,19 @@ export async function deleteJob(id: string, store: Store = getStore()): Promise<
 export async function storageSummary(store: Store = getStore()): Promise<{ retentionDays: number; jobs: number; packetBytes: number; eventBytes: number; rawBytes: number; totalBytes: number }> {
   const jobs = await listRecentJobs(store);
   const payloads = await Promise.all(jobs.map(async (job) => {
-    const [events, raw, result, live] = await Promise.all([adminJobEvents(job.id, store), adminRawOutput(job.id, store), adminResult(job.id, store), adminLiveLog(job.id, store)]);
+    const [events, raw, result, live, candidates] = await Promise.all([adminJobEvents(job.id, store), adminRawOutput(job.id, store), adminResult(job.id, store), adminLiveLog(job.id, store), listCandidates(job.id, store)]);
+    const candidateBytes = (await Promise.all(candidates.map(async (candidate) => {
+      const [output, candidateRawText, candidateLiveText] = await Promise.all([
+        candidateOutput(job.id, candidate.id, store),
+        candidateRaw(job.id, candidate.id, store),
+        candidateLive(job.id, candidate.id, store),
+      ]);
+      return Buffer.byteLength(output || "", "utf8") + Buffer.byteLength(candidateRawText || "", "utf8") + Buffer.byteLength(candidateLiveText || "", "utf8");
+    }))).reduce((sum, bytes) => sum + bytes, 0);
     return {
       packet: job.compressedBytes,
       events: Buffer.byteLength(JSON.stringify(events), "utf8"),
-      raw: Buffer.byteLength(raw || "", "utf8") + Buffer.byteLength(result || "", "utf8") + Buffer.byteLength(live || "", "utf8"),
+      raw: Buffer.byteLength(raw || "", "utf8") + Buffer.byteLength(result || "", "utf8") + Buffer.byteLength(live || "", "utf8") + candidateBytes,
     };
   }));
   const packetBytes = payloads.reduce((sum, item) => sum + item.packet, 0);

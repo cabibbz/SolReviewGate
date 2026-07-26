@@ -6,6 +6,7 @@ export const jobStates = [
   "APPROVED",
   "CLAIMED",
   "RUNNING",
+  "AWAITING_SELECTION",
   "FILTERING",
   "COMPLETE_REVIEW",
   "COMPLETE_OPAQUE",
@@ -14,6 +15,37 @@ export const jobStates = [
 ] as const;
 
 export type JobState = (typeof jobStates)[number];
+
+export const candidateStates = ["QUEUED", "RUNNING", "COMPLETE"] as const;
+export type CandidateState = (typeof candidateStates)[number];
+
+/**
+ * One execution of a packet under one configuration. A job runs at least one candidate.
+ * Candidates beyond the first exist so the operator can compare configurations, and a
+ * candidate created after release is phone-only research that never reaches the client.
+ */
+export interface ReviewCandidate {
+  id: string;
+  jobId: string;
+  index: number;
+  label: string;
+  state: CandidateState;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  sandboxCommandId?: string;
+  model: string;
+  reasoning: string;
+  protocolId: string;
+  protocolVersion: string;
+  codexVersion?: string;
+  policyHash?: string;
+  schemaHash?: string;
+  workerHash?: string;
+  internalCode?: string;
+  releasable?: boolean;
+  postRelease?: boolean;
+}
 
 export interface ReviewJob {
   id: string;
@@ -41,6 +73,20 @@ export interface ReviewJob {
   policyHash?: string;
   schemaHash?: string;
   workerHash?: string;
+  candidateCount?: number;
+  selectedCandidateId?: string;
+  /** Compact per-run record kept on the job so the lab can group outcomes without reading every candidate. */
+  runs?: RunSummary[];
+}
+
+export interface RunSummary {
+  candidateId: string;
+  model: string;
+  reasoning: string;
+  protocolVersion: string;
+  internalCode: string;
+  releasable: boolean;
+  postRelease: boolean;
 }
 
 export const reviewEventSources = ["system", "codex", "usage", "gate", "error", "result"] as const;

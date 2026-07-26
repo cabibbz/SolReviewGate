@@ -21,11 +21,18 @@ const builtInModels = [
   "gpt-5-codex",
 ] as const;
 
-export interface ReviewSettings {
+export interface ReviewConfig {
   model: string;
   reasoning: ReasoningEffort;
   protocolId: string;
 }
+
+export interface ReviewSettings extends ReviewConfig {
+  /** Extra configurations run as comparison candidates for one packet. Empty means a single run. */
+  panel: ReviewConfig[];
+}
+
+export const maxPanelConfigs = 6;
 
 export interface ReviewSettingsView {
   settings: ReviewSettings;
@@ -33,9 +40,10 @@ export interface ReviewSettingsView {
   modelChoices: string[];
   reasoningChoices: readonly ReasoningEffort[];
   protocols: { id: string; version: string; label: string; summary: string }[];
+  maxPanelConfigs: number;
 }
 
-export type SettingsErrorCode = "INVALID_MODEL" | "INVALID_REASONING" | "INVALID_PROTOCOL";
+export type SettingsErrorCode = "INVALID_MODEL" | "INVALID_REASONING" | "INVALID_PROTOCOL" | "INVALID_PANEL";
 
 export class SettingsError extends Error {
   constructor(public readonly code: SettingsErrorCode) {
@@ -70,18 +78,35 @@ function safe<T>(read: () => T, fallback: T): T {
   }
 }
 
+export function normalizeConfig(value: unknown): ReviewConfig {
+  const record = (value && typeof value === "object" ? value : {}) as Partial<ReviewConfig>;
+  return {
+    model: normalizeModel(record.model),
+    reasoning: normalizeReasoning(record.reasoning),
+    protocolId: normalizeProtocolId(record.protocolId),
+  };
+}
+
+export function normalizePanel(value: unknown): ReviewConfig[] {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value) || value.length > maxPanelConfigs) throw new SettingsError("INVALID_PANEL");
+  return value.map((entry) => normalizeConfig(entry));
+}
+
 /** Deployment defaults from the environment. Invalid environment values fall back instead of failing a review. */
 export function defaultReviewSettings(): ReviewSettings {
   return {
     model: safe(() => normalizeModel(config.model), builtInModels[0]),
     reasoning: safe(() => normalizeReasoning(config.reasoning), "medium"),
     protocolId: defaultProtocolId,
+    panel: [],
   };
 }
 
-export function modelChoices(current?: string): string[] {
+export function modelChoices(current: string | string[] = []): string[] {
   const configured = (process.env.SOL_MODEL_CHOICES || "").split(",").map((value) => value.trim()).filter(Boolean);
-  const candidates = [defaultReviewSettings().model, ...configured, ...builtInModels, current || ""];
+  const active = Array.isArray(current) ? current : [current];
+  const candidates = [defaultReviewSettings().model, ...configured, ...builtInModels, ...active];
   const valid = candidates.filter((value) => safe(() => Boolean(normalizeModel(value)), false));
   return [...new Set(valid)];
 }
@@ -94,6 +119,7 @@ export async function getReviewSettings(store: Store = getStore()): Promise<Revi
     model: safe(() => normalizeModel(stored.model), defaults.model),
     reasoning: safe(() => normalizeReasoning(stored.reasoning), defaults.reasoning),
     protocolId: safe(() => normalizeProtocolId(stored.protocolId), defaults.protocolId),
+    panel: safe(() => normalizePanel(stored.panel), defaults.panel),
   };
 }
 
@@ -103,9 +129,22 @@ export async function setReviewSettings(patch: Partial<ReviewSettings>, store: S
     model: patch.model === undefined ? current.model : normalizeModel(patch.model),
     reasoning: patch.reasoning === undefined ? current.reasoning : normalizeReasoning(patch.reasoning),
     protocolId: patch.protocolId === undefined ? current.protocolId : normalizeProtocolId(patch.protocolId),
+    panel: patch.panel === undefined ? current.panel : normalizePanel(patch.panel),
   };
   await store.set(settingsKey, next, settingsTtlSeconds);
   return next;
+}
+
+export function activeConfig(settings: ReviewSettings): ReviewConfig {
+  return { model: settings.model, reasoning: settings.reasoning, protocolId: settings.protocolId };
+}
+
+/**
+ * The configurations one approval runs. `panel` requests the comparison set, and an empty
+ * comparison set always falls back to the single active configuration.
+ */
+export function runConfigs(settings: ReviewSettings, panel: boolean): ReviewConfig[] {
+  return panel && settings.panel.length ? settings.panel : [activeConfig(settings)];
 }
 
 /** Settings plus the resolved protocol used by a single review run. */
@@ -119,8 +158,9 @@ export async function reviewSettingsView(store: Store = getStore()): Promise<Rev
   return {
     settings,
     defaults: defaultReviewSettings(),
-    modelChoices: modelChoices(settings.model),
+    modelChoices: modelChoices([settings.model, ...settings.panel.map((entry) => entry.model)]),
     reasoningChoices: reasoningEfforts,
     protocols: reviewProtocols.map(({ id, version, label, summary }) => ({ id, version, label, summary })),
+    maxPanelConfigs,
   };
 }

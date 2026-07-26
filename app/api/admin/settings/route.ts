@@ -1,6 +1,6 @@
 import { verifyAdminRequest } from "@/lib/admin-auth";
 import { json, opaqueError } from "@/lib/http";
-import { reviewSettingsView, setReviewSettings, SettingsError, type ReviewSettings } from "@/lib/settings";
+import { normalizePanel, reviewSettingsView, setReviewSettings, SettingsError, type ReviewSettings } from "@/lib/settings";
 
 export const runtime = "nodejs";
 
@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       ...(body.model === undefined ? {} : { model: body.model }),
       ...(body.reasoning === undefined ? {} : { reasoning: body.reasoning }),
       ...(body.protocolId === undefined ? {} : { protocolId: body.protocolId }),
+      ...(body.panel === undefined ? {} : { panel: normalizePanel(body.panel) }),
     });
     return json(await reviewSettingsView());
   } catch (error) {

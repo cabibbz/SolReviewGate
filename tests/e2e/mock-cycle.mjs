@@ -159,7 +159,7 @@ step("second packet rejected opaquely");
 
 const settingsBefore = await signedFetch("/api/admin/settings");
 assert.equal(settingsBefore.response.status, 200);
-assert.deepEqual(settingsBefore.body.settings, { model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline" });
+assert.deepEqual(settingsBefore.body.settings, { model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline", panel: [] });
 assert.ok(settingsBefore.body.modelChoices.includes("gpt-5.6-sol"));
 assert.deepEqual(settingsBefore.body.protocols.map((protocol) => protocol.id), ["baseline", "control", "strict"]);
 const invalidSettings = await signedFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ model: "-c model_reasoning_effort=\"high\"" }) });
@@ -167,7 +167,7 @@ assert.equal(invalidSettings.response.status, 400);
 assert.equal(invalidSettings.body.error, "invalid_model");
 const updatedSettings = await signedFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" }) });
 assert.equal(updatedSettings.response.status, 200);
-assert.deepEqual(updatedSettings.body.settings, { model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" });
+assert.deepEqual(updatedSettings.body.settings, { model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict", panel: [] });
 step("model and alignment protocol changed from the PWA");
 
 const thirdClient = await runClient(enrollment.body.token, `${packet}\nThird request.`);
@@ -182,8 +182,72 @@ assert.notEqual(thirdDetail.body.job.policyHash, detailAfter.body.job.policyHash
 assert.equal(thirdDetail.body.job.schemaHash, detailAfter.body.job.schemaHash);
 step("selected model and protocol recorded on the next approved review");
 
+const panel = [
+  { model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline" },
+  { model: "gpt-5.6-sol", reasoning: "low", protocolId: "control" },
+  { model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" },
+];
+const panelSaved = await signedFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ panel }) });
+assert.equal(panelSaved.response.status, 200);
+assert.equal(panelSaved.body.settings.panel.length, 3);
+step("comparison set stored");
+
+const panelClient = await runClient(enrollment.body.token, `${packet}\nCompare configurations.`);
+const panelJob = await waitForJob(new Set([firstJob.id, secondJob.id, thirdJob.id]));
+assert.equal((await signedFetch(`/api/admin/jobs/${panelJob.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "approve_panel" }) })).response.status, 200);
+
+let panelDetail = await signedFetch(`/api/admin/jobs/${panelJob.id}`);
+for (let attempt = 0; attempt < 40 && panelDetail.body.job.state !== "AWAITING_SELECTION"; attempt += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  panelDetail = await signedFetch(`/api/admin/jobs/${panelJob.id}`);
+}
+assert.equal(panelDetail.body.job.state, "AWAITING_SELECTION");
+assert.equal(panelDetail.body.candidates.length, 3);
+assert.deepEqual(panelDetail.body.candidates.map((candidate) => candidate.protocolVersion), ["alignment-v1", "alignment-control-v1", "alignment-strict-v1"]);
+assert.deepEqual(panelDetail.body.candidates.map((candidate) => Boolean(candidate.releasable)), [true, false, true]);
+step("three candidates finished and nothing was released");
+
+const withheldCandidate = panelDetail.body.candidates[1];
+const chosenCandidate = panelDetail.body.candidates[2];
+const blockedRelease = await signedFetch(`/api/admin/jobs/${panelJob.id}/selection`, { method: "POST", body: JSON.stringify({ candidateId: withheldCandidate.id }) });
+assert.equal(blockedRelease.response.status, 409);
+assert.equal(blockedRelease.body.error, "invalid_candidate");
+
+const chosenDetail = await signedFetch(`/api/admin/jobs/${panelJob.id}/candidates/${chosenCandidate.id}`);
+assert.equal(chosenDetail.response.status, 200);
+assert.match(chosenDetail.body.result, /gpt-5\.6-codex under alignment-strict-v1/);
+
+const selection = await signedFetch(`/api/admin/jobs/${panelJob.id}/selection`, { method: "POST", body: JSON.stringify({ candidateId: chosenCandidate.id }) });
+assert.equal(selection.response.status, 200);
+assert.equal(selection.body.released, true);
+const panelOutput = await panelClient.completed;
+assert.equal(panelOutput.code, 0);
+assert.match(panelOutput.stdout, /gpt-5\.6-codex under alignment-strict-v1/);
+assert.equal(panelOutput.stderr, "");
+step("operator choice reached Claude and the other candidates did not");
+
+const rerun = await signedFetch(`/api/admin/jobs/${panelJob.id}/candidates`, { method: "POST", body: JSON.stringify({ model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline" }) });
+assert.equal(rerun.response.status, 200);
+assert.equal(rerun.body.candidate.postRelease, true);
+let afterRerun = await signedFetch(`/api/admin/jobs/${panelJob.id}`);
+for (let attempt = 0; attempt < 40 && afterRerun.body.candidates.length === 4 && afterRerun.body.candidates[3].state !== "COMPLETE"; attempt += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  afterRerun = await signedFetch(`/api/admin/jobs/${panelJob.id}`);
+}
+assert.equal(afterRerun.body.candidates.length, 4);
+assert.equal(afterRerun.body.candidates[3].state, "COMPLETE");
+assert.equal(afterRerun.body.job.state, "COMPLETE_REVIEW");
+assert.equal(afterRerun.body.job.selectedCandidateId, chosenCandidate.id);
+assert.match(afterRerun.body.result, /gpt-5\.6-codex under alignment-strict-v1/);
+assert.equal(afterRerun.body.job.runs.filter((run) => run.postRelease).length, 1);
+const lateRelease = await signedFetch(`/api/admin/jobs/${panelJob.id}/selection`, { method: "POST", body: JSON.stringify({ candidateId: afterRerun.body.candidates[3].id }) });
+assert.equal(lateRelease.response.status, 409);
+step("re-run after release stayed on the phone");
+
 const unauthorized = await fetch(`${baseUrl}/api/admin/jobs`);
 assert.equal(unauthorized.status, 401);
+assert.equal((await fetch(`${baseUrl}/api/admin/jobs/${panelJob.id}/candidates`)).status, 401);
+assert.equal((await fetch(`${baseUrl}/api/admin/jobs/${panelJob.id}/selection`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ candidateId: null }) })).status, 401);
 assert.equal((await fetch(`${baseUrl}/api/admin/settings`)).status, 401);
 assert.equal((await fetch(`${baseUrl}/api/admin/settings`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "gpt-5.6" }) })).status, 401);
-process.stdout.write("E2E mock cycle passed: pair, login, enroll, upload, preview, approve, review, retain, reject, opaque, reconfigure.\n");
+process.stdout.write("E2E mock cycle passed: pair, login, enroll, upload, preview, approve, review, retain, reject, opaque, reconfigure, compare, select.\n");

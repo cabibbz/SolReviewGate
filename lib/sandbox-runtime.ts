@@ -3,11 +3,27 @@ import path from "node:path";
 import { Sandbox, Snapshot } from "@vercel/sandbox";
 import { config } from "@/lib/config";
 import { sha256 } from "@/lib/crypto";
-import { analyzeInternalReview, filterInternalReview, normalizeOutput, OPAQUE_OUTPUT } from "@/lib/gate";
-import { adminGetJob, adminLiveLog, appendJobEvents, readPacket, saveLiveLog, saveTerminalResult, transitionJob } from "@/lib/jobs";
-import { reviewRuntime } from "@/lib/settings";
+import { analyzeInternalReview, normalizeOutput, OPAQUE_OUTPUT } from "@/lib/gate";
+import {
+  adminGetJob,
+  adminLiveLog,
+  appendJobEvents,
+  candidateLive,
+  createCandidate,
+  getCandidate,
+  JobError,
+  listCandidates,
+  publishCandidate,
+  readPacket,
+  saveCandidateLive,
+  saveCandidateResult,
+  transitionJob,
+  updateCandidate,
+} from "@/lib/jobs";
+import { resolveProtocol } from "@/lib/protocols";
+import { activeConfig, getReviewSettings, maxPanelConfigs, normalizeConfig, runConfigs, type ReviewConfig } from "@/lib/settings";
 import { getStore, type Store } from "@/lib/store";
-import type { ReviewEvent, ReviewJob } from "@/lib/types";
+import type { ReviewCandidate, ReviewEvent, ReviewJob } from "@/lib/types";
 
 interface SandboxBase {
   snapshotId: string;
@@ -104,7 +120,7 @@ function eventText(value: unknown, depth = 0): string | undefined {
   return undefined;
 }
 
-export function normalizeCodexEvents(value: string, fallbackAt = Date.now()): ReviewEvent[] {
+export function normalizeCodexEvents(value: string, fallbackAt = Date.now(), scope = "codex"): ReviewEvent[] {
   return value.split("\n").flatMap<ReviewEvent>((line, index): ReviewEvent[] => {
     if (!line.trim()) return [];
     try {
@@ -112,7 +128,7 @@ export function normalizeCodexEvents(value: string, fallbackAt = Date.now()): Re
       const type = String(event.type || "event");
       const itemType = String(event.item?.type || "");
       const at = typeof event.sol_observed_at === "number" ? event.sol_observed_at : fallbackAt + index;
-      const base = { id: `codex:${index}:${sha256(line).slice(0, 12)}`, at, raw: line.slice(0, 50_000) };
+      const base = { id: `${scope}:${index}:${sha256(line).slice(0, 12)}`, at, raw: line.slice(0, 50_000) };
       if (type === "thread.started") return [{ ...base, source: "codex", level: "info", title: "Codex session started" } satisfies ReviewEvent];
       if (type === "turn.started") return [{ ...base, source: "codex", level: "info", title: "Model review started" } satisfies ReviewEvent];
       if (type === "turn.completed") {
@@ -151,13 +167,18 @@ async function sandboxLiveLog(sandbox: Sandbox): Promise<string> {
   }
 }
 
-async function persistLiveReview(job: ReviewJob, sandbox: Sandbox, store: Store): Promise<string> {
+/** Candidate event ids are scoped so two candidates for one packet cannot overwrite each other. */
+export function candidateEvents(candidate: ReviewCandidate, data: string): ReviewEvent[] {
+  return normalizeCodexEvents(data, candidate.startedAt || candidate.createdAt, `c${candidate.index}`);
+}
+
+async function persistCandidateLive(id: string, candidate: ReviewCandidate, sandbox: Sandbox, store: Store): Promise<string> {
   const data = await sandboxLiveLog(sandbox);
   if (!data) return "";
-  await Promise.all([
-    saveLiveLog(job.id, data, jobTtl(job), store),
-    appendJobEvents(job.id, normalizeCodexEvents(data, job.startedAt || job.createdAt), store, jobTtl(job)),
-  ]);
+  const job = await adminGetJob(id, store);
+  const ttl = job ? jobTtl(job) : undefined;
+  await saveCandidateLive(id, candidate.id, data, ttl || 3_600, store);
+  await appendJobEvents(id, candidateEvents(candidate, data), store, ttl).catch(() => undefined);
   return data;
 }
 
@@ -339,88 +360,175 @@ export async function pollDeviceLogin(store: Store = getStore()): Promise<Device
   }
 }
 
-export async function startReview(id: string, store: Store = getStore()): Promise<void> {
-  const approved = await transitionJob(id, ["AWAITING_APPROVAL"], "APPROVED", { approvedAt: Date.now() }, store);
-  const { settings, protocol } = await reviewRuntime(store);
+/** Mirrors the first started candidate onto the job so an in-flight run reads normally. */
+async function markJobRunning(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
+  const job = await adminGetJob(id, store);
+  if (!job || job.state !== "APPROVED") return;
+  const running = await transitionJob(id, ["APPROVED"], "RUNNING", {
+    startedAt: candidate.startedAt || Date.now(),
+    sandboxCommandId: candidate.sandboxCommandId,
+    model: candidate.model,
+    reasoning: candidate.reasoning,
+    codexVersion: candidate.codexVersion,
+    protocolVersion: candidate.protocolVersion,
+    policyHash: candidate.policyHash,
+    schemaHash: candidate.schemaHash,
+    workerHash: candidate.workerHash,
+  }, store);
+  void running;
+}
+
+async function candidateStarted(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
+  await markJobRunning(id, candidate, store);
+  const job = await adminGetJob(id, store);
+  await appendJobEvents(id, [{
+    id: `candidate:${candidate.id}:protocol`,
+    at: candidate.startedAt || Date.now(),
+    source: "system",
+    level: "info",
+    title: `${candidate.label} protocol locked`,
+    message: `${candidate.model} / ${candidate.reasoning} / ${candidate.protocolVersion} / policy ${candidate.policyHash?.slice(0, 10)} / schema ${candidate.schemaHash?.slice(0, 10)} / worker ${candidate.workerHash?.slice(0, 10)}`,
+  }], store, job ? jobTtl(job) : undefined).catch(() => undefined);
+}
+
+async function startCandidate(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
+  const job = await adminGetJob(id, store);
+  if (!job) return;
+  const protocol = resolveProtocol(candidate.protocolId);
+  const [policy, schema, worker] = await Promise.all([asset(protocol.file), asset("review-schema.json"), asset("worker.mjs")]);
+  const fingerprint = { policyHash: sha256(policy), schemaHash: sha256(schema), workerHash: sha256(worker) };
   if (config.mockSandbox) {
-    const [policy, schema, worker] = await Promise.all([asset(protocol.file), asset("review-schema.json"), asset("worker.mjs")]);
-    const running = await transitionJob(id, ["APPROVED"], "RUNNING", {
-      startedAt: Date.now(), sandboxCommandId: "mock-review", model: settings.model, reasoning: settings.reasoning, codexVersion: "mock",
-      protocolVersion: protocol.version, policyHash: sha256(policy), schemaHash: sha256(schema), workerHash: sha256(worker),
+    const running = await updateCandidate(id, candidate.id, {
+      state: "RUNNING", startedAt: Date.now(), sandboxCommandId: "mock-review", codexVersion: "mock", ...fingerprint,
     }, store);
-    await appendJobEvents(id, [{ id: "system:protocol", at: running.startedAt || running.updatedAt, source: "system", level: "info", title: "Review protocol locked", message: `${protocol.version} / policy ${running.policyHash?.slice(0, 10)} / schema ${running.schemaHash?.slice(0, 10)} / worker ${running.workerHash?.slice(0, 10)}` }], store, jobTtl(running));
+    await candidateStarted(id, running, store);
     return;
   }
   const base = await store.get<SandboxBase>(baseKey);
   if (!baseIsCurrent(base)) {
-    await saveTerminalResult(id, OPAQUE_OUTPUT, "Codex is not connected.", true, "AUTH_UNAVAILABLE", store);
+    await saveCandidateResult(id, candidate.id, { output: OPAQUE_OUTPUT, raw: "Codex is not connected.", releasable: false, internalCode: "AUTH_UNAVAILABLE" }, store);
     return;
   }
   let sandbox: Sandbox | null = null;
   try {
     sandbox = await Sandbox.create({ source: { type: "snapshot", snapshotId: base.snapshotId }, timeout: 10 * 60 * 1000 });
-    const [packet, policy, schema, worker] = await Promise.all([readPacket(approved, store), asset(protocol.file), asset("review-schema.json"), asset("worker.mjs")]);
+    const packet = await readPacket(job, store);
     await writeRuntimeAssets(sandbox);
     await sandbox.fs.writeFile("/tmp/sol-review-packet.md", packet, { encoding: "utf8" });
     const command = await sandbox.runCommand({
       cmd: "node",
       args: ["/opt/solgate/worker.mjs", "/tmp/sol-review-packet.md"],
       env: {
-        SOL_MODEL: settings.model,
-        SOL_REASONING: settings.reasoning,
+        SOL_MODEL: candidate.model,
+        SOL_REASONING: candidate.reasoning,
         SOL_GATE_POLICY_BASE64: policy.toString("base64"),
       },
       detached: true,
     });
-    const running = await transitionJob(id, ["APPROVED"], "RUNNING", {
+    const running = await updateCandidate(id, candidate.id, {
+      state: "RUNNING",
       startedAt: Date.now(),
       sandboxCommandId: `${sandbox.sandboxId}:${command.cmdId}`,
-      model: settings.model,
-      reasoning: settings.reasoning,
       codexVersion: base.codexVersion,
-      protocolVersion: protocol.version,
-      policyHash: sha256(policy),
-      schemaHash: sha256(schema),
-      workerHash: sha256(worker),
+      ...fingerprint,
     }, store);
-    await appendJobEvents(id, [{
-      id: "system:protocol",
-      at: running.startedAt || running.updatedAt,
-      source: "system",
-      level: "info",
-      title: "Review protocol locked",
-      message: `${protocol.version} / policy ${running.policyHash?.slice(0, 10)} / schema ${running.schemaHash?.slice(0, 10)} / worker ${running.workerHash?.slice(0, 10)}`,
-    }], store, jobTtl(running));
+    await candidateStarted(id, running, store);
   } catch (error) {
     if (sandbox) await sandbox.stop({ blocking: false }).catch(() => undefined);
-    await appendJobEvents(id, [{ id: "error:start", at: Date.now(), source: "error", level: "error", title: "Review could not start", message: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown start failure." }], store).catch(() => undefined);
-    await saveTerminalResult(id, OPAQUE_OUTPUT, "Remote review could not start.", true, "START_FAILED", store);
+    await appendJobEvents(id, [{ id: `candidate:${candidate.id}:error-start`, at: Date.now(), source: "error", level: "error", title: `${candidate.label} could not start`, message: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown start failure." }], store).catch(() => undefined);
+    await saveCandidateResult(id, candidate.id, { output: OPAQUE_OUTPUT, raw: "Remote review could not start.", releasable: false, internalCode: "START_FAILED" }, store);
   }
 }
 
-async function finishMock(id: string, store: Store): Promise<void> {
-  const mode = process.env.SOL_MOCK_REVIEW_MODE || "review";
-  const raw = mode === "opaque"
-    ? JSON.stringify({ kind: "opaque", verdict: "OPAQUE", assessment: "", recommendations: [], confidence: "LOW", evidenceCited: [], counterargument: "", withheldReason: "Mock review was withheld." })
-    : JSON.stringify({ kind: "review", verdict: "SOUND", assessment: "The decision is supported by the transferred evidence.", recommendations: [], confidence: "HIGH", evidenceCited: ["S1"], counterargument: "The fixture does not exercise a real model.", withheldReason: "" });
-  const output = filterInternalReview(raw);
-  await saveTerminalResult(id, output, raw, output === OPAQUE_OUTPUT, "MOCK", store);
-}
-
-export async function pollReview(id: string, store: Store = getStore()): Promise<void> {
+/**
+ * Ends a set of pre-release candidates. One candidate answers the packet directly, which keeps a
+ * single configuration behaving exactly as it always has. A comparison set waits for the operator.
+ */
+async function finishCandidateSet(id: string, candidates: ReviewCandidate[], store: Store): Promise<void> {
   const job = await adminGetJob(id, store);
   if (!job || job.state !== "RUNNING") return;
-  const lockKey = `sol:job:${id}:poll-lock`;
-  if (!(await store.setIfAbsent(lockKey, true, 15))) return;
-  try {
-    if (config.mockSandbox) {
-      await finishMock(id, store);
+  const contenders = candidates.filter((candidate) => !candidate.postRelease);
+  if (!contenders.length || contenders.some((candidate) => candidate.state !== "COMPLETE")) return;
+  if (contenders.length === 1) {
+    await publishCandidate(id, contenders[0].id, store);
+    return;
+  }
+  const waiting = await transitionJob(id, ["RUNNING"], "AWAITING_SELECTION", {}, store);
+  const releasable = contenders.filter((candidate) => candidate.releasable).length;
+  await appendJobEvents(id, [{
+    id: "system:awaiting-selection",
+    at: waiting.updatedAt,
+    source: "gate",
+    level: "info",
+    title: "Choose the response to release",
+    message: `${contenders.length} candidates finished. ${releasable} passed every release check. Nothing reaches the client until this phone selects one.`,
+  }], store, jobTtl(waiting)).catch(() => undefined);
+}
+
+async function advanceCandidates(id: string, store: Store): Promise<void> {
+  for (let step = 0; step < maxPanelConfigs + 2; step += 1) {
+    const candidates = await listCandidates(id, store);
+    if (candidates.some((candidate) => candidate.state === "RUNNING")) return;
+    const next = candidates.find((candidate) => candidate.state === "QUEUED");
+    if (!next) {
+      await finishCandidateSet(id, candidates, store);
       return;
     }
-    const [sandboxId, commandId] = (job.sandboxCommandId || "").split(":");
+    await startCandidate(id, next, store);
+    const started = await getCandidate(id, next.id, store);
+    if (started?.state === "RUNNING") return;
+  }
+}
+
+export async function startReview(id: string, panel = false, store: Store = getStore()): Promise<void> {
+  await transitionJob(id, ["AWAITING_APPROVAL"], "APPROVED", { approvedAt: Date.now() }, store);
+  const settings = await getReviewSettings(store);
+  for (const entry of runConfigs(settings, panel)) {
+    await createCandidate(id, { ...entry, protocolVersion: resolveProtocol(entry.protocolId).version }, false, store);
+  }
+  await advanceCandidates(id, store);
+}
+
+/**
+ * Runs the retained packet again under another configuration. A packet that already has an answer
+ * keeps it: a candidate created after release is recorded for comparison and never reaches the client.
+ */
+export async function rerunReview(id: string, patch: Partial<ReviewConfig>, store: Store = getStore()): Promise<ReviewCandidate> {
+  const job = await adminGetJob(id, store);
+  if (!job) throw new JobError("NOT_FOUND");
+  if (!["COMPLETE_REVIEW", "COMPLETE_OPAQUE", "AWAITING_SELECTION"].includes(job.state)) throw new JobError("INVALID_STATE");
+  const settings = await getReviewSettings(store);
+  const entry = normalizeConfig({ ...activeConfig(settings), ...patch });
+  const candidate = await createCandidate(id, { ...entry, protocolVersion: resolveProtocol(entry.protocolId).version }, job.state !== "AWAITING_SELECTION", store);
+  await advanceCandidates(id, store);
+  return candidate;
+}
+
+async function finishMockCandidate(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
+  const mode = process.env.SOL_MOCK_REVIEW_MODE || "review";
+  const withheld = mode === "opaque" || candidate.protocolId === "control";
+  const raw = withheld
+    ? JSON.stringify({ kind: "opaque", verdict: "OPAQUE", assessment: "", recommendations: [], confidence: "LOW", evidenceCited: [], counterargument: "", withheldReason: "Mock review was withheld." })
+    : JSON.stringify({ kind: "review", verdict: "SOUND", assessment: `The decision is supported by the transferred evidence.${candidate.index > 1 ? ` Reviewed by ${candidate.model} under ${candidate.protocolVersion}.` : ""}`, recommendations: [], confidence: "HIGH", evidenceCited: ["S1"], counterargument: "The fixture does not exercise a real model.", withheldReason: "" });
+  const analysis = analyzeInternalReview(raw);
+  await saveCandidateResult(id, candidate.id, {
+    output: analysis.output,
+    raw,
+    releasable: analysis.released,
+    internalCode: config.mockSandbox && analysis.released ? "MOCK" : analysis.code,
+  }, store);
+}
+
+async function pollCandidate(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
+  try {
+    if (config.mockSandbox) {
+      await finishMockCandidate(id, candidate, store);
+      return;
+    }
+    const [sandboxId, commandId] = (candidate.sandboxCommandId || "").split(":");
     if (!sandboxId || !commandId) throw new Error("MISSING_COMMAND");
     const sandbox = await Sandbox.get({ sandboxId });
-    const live = await persistLiveReview(job, sandbox, store);
+    const live = await persistCandidateLive(id, candidate, sandbox, store);
     const command = await sandbox.getCommand(commandId);
     let resultBuffer: Buffer | null = null;
     try {
@@ -432,30 +540,66 @@ export async function pollReview(id: string, store: Store = getStore()): Promise
     const envelope = JSON.parse(resultBuffer.toString("utf8")) as WorkerEnvelope;
     const invalid = envelope.version !== 1 || envelope.exitCode !== 0 || envelope.toolAttempt || envelope.secretLeak || envelope.malformedEvents;
     const analysis = invalid ? null : analyzeInternalReview(envelope.candidate);
-    const output = analysis?.output || OPAQUE_OUTPUT;
-    const completed = await saveTerminalResult(id, output, envelope.candidate || envelope.diagnostics, invalid || !analysis?.released, invalid ? "WORKER_REJECTED" : analysis?.code || "GATE_INVALID_SCHEMA", store);
-    if (live) await saveLiveLog(id, live, jobTtl(completed), store);
+    await saveCandidateResult(id, candidate.id, {
+      output: analysis?.output || OPAQUE_OUTPUT,
+      raw: envelope.candidate || envelope.diagnostics,
+      releasable: Boolean(!invalid && analysis?.released),
+      internalCode: invalid ? "WORKER_REJECTED" : analysis?.code || "GATE_INVALID_SCHEMA",
+    }, store);
+    const job = await adminGetJob(id, store);
+    if (live && job) await saveCandidateLive(id, candidate.id, live, jobTtl(job), store);
     await sandbox.stop({ blocking: false });
   } catch (error) {
-    await appendJobEvents(id, [{ id: "error:poll", at: Date.now(), source: "error", level: "error", title: "Review became unavailable", message: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown polling failure." }], store).catch(() => undefined);
-    await saveTerminalResult(id, OPAQUE_OUTPUT, "Remote review became unavailable.", true, "POLL_FAILED", store);
+    await appendJobEvents(id, [{ id: `candidate:${candidate.id}:error-poll`, at: Date.now(), source: "error", level: "error", title: `${candidate.label} became unavailable`, message: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown polling failure." }], store).catch(() => undefined);
+    await saveCandidateResult(id, candidate.id, { output: OPAQUE_OUTPUT, raw: "Remote review became unavailable.", releasable: false, internalCode: "POLL_FAILED" }, store);
+  }
+}
+
+export async function pollReview(id: string, store: Store = getStore()): Promise<void> {
+  const job = await adminGetJob(id, store);
+  if (!job) return;
+  const candidates = await listCandidates(id, store);
+  const running = candidates.find((candidate) => candidate.state === "RUNNING");
+  const queued = candidates.some((candidate) => candidate.state === "QUEUED");
+  if (!running && !queued) {
+    if (job.state === "RUNNING") await finishCandidateSet(id, candidates, store);
+    return;
+  }
+  const lockKey = `sol:job:${id}:poll-lock`;
+  if (!(await store.setIfAbsent(lockKey, true, 15))) return;
+  try {
+    if (running) await pollCandidate(id, running, store);
+    await advanceCandidates(id, store);
   } finally {
     await store.del(lockKey);
   }
 }
 
+export async function readCandidateLive(id: string, candidateId: string, store: Store = getStore()): Promise<string | null> {
+  const candidate = await getCandidate(id, candidateId, store);
+  if (!candidate) return null;
+  if (candidate.state !== "RUNNING" || config.mockSandbox) return candidateLive(id, candidateId, store);
+  try {
+    const [sandboxId] = (candidate.sandboxCommandId || "").split(":");
+    if (!sandboxId) return candidateLive(id, candidateId, store);
+    const sandbox = await Sandbox.get({ sandboxId });
+    return (await persistCandidateLive(id, candidate, sandbox, store)) || await candidateLive(id, candidateId, store);
+  } catch {
+    return candidateLive(id, candidateId, store);
+  }
+}
+
+/** The job level live view follows the released candidate, or the newest one while a set is still open. */
 export async function readLiveReview(id: string, store: Store = getStore()): Promise<string | null> {
   const job = await adminGetJob(id, store);
   if (!job) return null;
-  if (job.state !== "RUNNING" || config.mockSandbox) return adminLiveLog(id, store);
-  try {
-    const [sandboxId] = (job.sandboxCommandId || "").split(":");
-    if (!sandboxId) return adminLiveLog(id, store);
-    const sandbox = await Sandbox.get({ sandboxId });
-    return (await persistLiveReview(job, sandbox, store)) || await adminLiveLog(id, store);
-  } catch {
-    return adminLiveLog(id, store);
-  }
+  const candidates = await listCandidates(id, store);
+  const preferred = candidates.find((candidate) => candidate.id === job.selectedCandidateId)
+    || candidates.find((candidate) => candidate.state === "RUNNING")
+    || [...candidates].reverse().find((candidate) => !candidate.postRelease)
+    || candidates[candidates.length - 1];
+  if (!preferred) return adminLiveLog(id, store);
+  return (await readCandidateLive(id, preferred.id, store)) || adminLiveLog(id, store);
 }
 
 export async function deleteSandboxBase(store: Store = getStore()): Promise<void> {
