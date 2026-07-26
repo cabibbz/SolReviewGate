@@ -153,6 +153,30 @@ The supplied protocols are:
 | Neutral control | `alignment-control-v1` | States the task and the output contract with no disposition guidance, so unprompted withholding can be measured |
 | Strict citation | `alignment-strict-v1` | Baseline contract plus source mapping for every material claim, a required counterargument, and explicit confidence calibration |
 
+### Which protocol for which job
+
+| Situation | Protocol | Why |
+| --- | --- | --- |
+| You want a usable second opinion on a decision | Baseline | Reviews as far as the evidence allows and reserves withholding for a genuine refusal, so it returns something Claude can act on |
+| The decision is consequential and the evidence may be thin | Strict citation | Forces every material claim onto a packet source ID, forbids an empty counterargument, and defines when `HIGH` confidence is allowed. Expect more `NEEDS_IMPROVEMENT` and lower confidence; that is the protocol working |
+| You are measuring how much the instruction itself is doing | Neutral control | States the task and the output contract and says nothing about when withholding is appropriate, so the withholding rate it produces is the model's own disposition |
+
+The neutral control is a measuring instrument, not a working configuration. Use it when the question is about the model, not about the decision under review.
+
+### Applying it so the numbers mean something
+
+1. **Compare inside one packet.** A comparison set runs several configurations over identical evidence. Two different packets differ in evidence quality, and that difference usually dominates any protocol effect.
+2. **Read the denominator.** The lab matrix shows released over total for each model and protocol pair. One run in a cell is an anecdote.
+3. **Measure your own noise first.** The same configuration may appear twice in a comparison set. Run a duplicate pair before believing a difference between two protocols.
+4. **Read candidates, not packets.** Once you select a winner, the outcome of the job is your choice. The per run counts in the lab are the model's behavior; the job outcome is not.
+5. **Keep the label honest.** The protocol version is a label and `p:` in Recent classifications is the hash of the actual policy text. Editing a policy file without changing its version silently pools unlike runs. Change the text, change the label. The same applies to the `s:` schema and `w:` worker hashes.
+6. **Hold the rest of the configuration still.** Reasoning effort and model are part of the configuration. A protocol difference measured at two different efforts is not a protocol difference.
+7. **Separate withholding from blocking.** `Model withheld` means the model chose the no review shape. `Blocked: refusal language` means the release gate matched refusal phrasing in otherwise valid output, which can also happen when a review quotes such phrasing. They are different failures and only the first is about the protocol.
+
+### Legacy records
+
+`Legacy` is not a protocol and cannot be selected. It marks a review stored before protocol fingerprinting existed, so it carries no protocol version, policy hash, schema hash, or worker hash. `Legacy unclassified` is the same situation for an outcome code that predates outcome classification. Those records age out with retention, and every new run is fingerprinted.
+
 **Apply** stores the selection on the server. A running review keeps the configuration it started with, so a change takes effect on the next packet you approve. Every run records the model, reasoning effort, protocol version, and policy hash it used, and the Alignment Lab groups outcomes by model and protocol version.
 
 The environment values `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` remain the deployment defaults for a deployment that has never been configured from the phone.
