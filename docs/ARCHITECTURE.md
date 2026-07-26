@@ -37,7 +37,8 @@ Named clients use independent token hashes and an atomic Redis index. Revoking o
 | `UPLOADING` | Client creates a job | `AWAITING_APPROVAL`, `EXPIRED` |
 | `AWAITING_APPROVAL` | Packet integrity checks pass | `APPROVED`, `REJECTED`, `EXPIRED` |
 | `APPROVED` | Phone signs approval | `RUNNING`, `COMPLETE_OPAQUE` |
-| `RUNNING` | Sandbox review starts | `COMPLETE_REVIEW`, `COMPLETE_OPAQUE` |
+| `RUNNING` | Sandbox review starts | `AWAITING_SELECTION`, `COMPLETE_REVIEW`, `COMPLETE_OPAQUE` |
+| `AWAITING_SELECTION` | A comparison set finished with more than one candidate | `COMPLETE_REVIEW`, `COMPLETE_OPAQUE` |
 | `COMPLETE_REVIEW` | Every release check passes | Terminal |
 | `COMPLETE_OPAQUE` | Model, gate, worker, auth, or infrastructure path does not release | Terminal |
 | `REJECTED` | Phone rejects the packet | Terminal |
@@ -79,6 +80,49 @@ The PWA presents two representations:
 
 Live removes transport JSON syntax, IDs, and field labels when a human readable message exists. Raw preserves those records for diagnosis. Neither view can reveal private hidden chain of thought that the model interface does not emit.
 
+## Run Configuration
+
+The reviewing model, the reasoning effort, and the alignment protocol are runtime state, not deployment state. The paired phone reads and writes them through the signed `/api/admin/settings` route, and the server stores one record in Redis.
+
+| Field | Accepted values |
+| --- | --- |
+| `model` | A single Codex model id matching `^[A-Za-z0-9][A-Za-z0-9._:-]{1,63}$` |
+| `reasoning` | `minimal`, `low`, `medium`, or `high` |
+| `protocolId` | An id in the server protocol catalog |
+
+`SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` supply the defaults for a deployment that has never been configured from the phone, and a stored value that no longer validates falls back to them instead of failing the review.
+
+`startReview` resolves the configuration once, at approval, and passes it to the fresh Sandbox. A running review therefore keeps the configuration it started with, and a change applies to the next approved packet.
+
+## Comparison Candidates
+
+One approval creates one candidate per configuration. A candidate is a complete execution of the packet: its own Sandbox, its own policy, its own release gate result, and its own retained transcript, response, and outcome code.
+
+| Property | Behavior |
+| --- | --- |
+| Order | Candidates run one at a time. Polling starts the next queued candidate when the previous one finishes |
+| Isolation | Each candidate gets a fresh Sandbox from the Codex snapshot. No candidate sees another |
+| Gate | Every candidate passes the release gate independently. A blocked or withheld candidate cannot be selected |
+| Selection | A single candidate answers the packet automatically. Two or more wait in `AWAITING_SELECTION` for the phone |
+| Finality | Releasing a candidate, or releasing nothing, answers the packet once. `releaseCandidate` is reachable only from `AWAITING_SELECTION` |
+| After release | A candidate created after the answer is marked `postRelease` and is excluded from selection permanently |
+
+Each finished candidate also appends a compact run summary to the job record, so the Alignment Lab can group model and protocol outcomes without reading every candidate payload.
+
+An unanswered packet stays valid for `SOL_JOB_TTL_SECONDS`. If the client stops waiting before a selection, it receives the fixed terminal response, and the candidates remain readable on the phone.
+
+## Protocol Catalog
+
+Each selectable protocol is a policy file in `sandbox` with a stable id and a recorded version. A protocol id is resolved through the catalog only, so a submitted value never reaches a filesystem path.
+
+| Protocol | Recorded version | Policy |
+| --- | --- | --- |
+| Baseline | `SOL_PROTOCOL_VERSION`, `alignment-v1` by default | `review-policy.md` |
+| Neutral control | `alignment-control-v1` | `review-policy-control.md` |
+| Strict citation | `alignment-strict-v1` | `review-policy-strict.md` |
+
+The neutral control states the task and the output contract without disposition guidance, which measures how often the model withholds when it is not told when withholding is appropriate. The strict protocol keeps the baseline disposition rules and adds per claim source mapping, a mandatory counterargument, and confidence calibration rules.
+
 ## Protocol Versioning
 
 Every run records:
@@ -88,5 +132,6 @@ Every run records:
 3. Review policy SHA 256
 4. Output schema SHA 256
 5. Worker SHA 256
+6. Model and reasoning effort
 
-The Alignment Lab groups outcomes by protocol version and shows fingerprint prefixes. This prevents unlike experimental configurations from being treated as one population.
+The Alignment Lab groups outcomes by protocol version and shows fingerprint prefixes. This prevents unlike experimental configurations from being treated as one population. Changing the protocol changes both the recorded version and the policy hash, so a reconfigured run cannot be pooled with earlier runs by accident.

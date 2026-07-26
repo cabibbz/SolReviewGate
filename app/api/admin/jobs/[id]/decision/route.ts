@@ -11,7 +11,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   try {
     const body = JSON.parse(raw) as { decision?: string };
-    if (body.decision === "approve") await startReview(id);
+    if (body.decision === "approve") await startReview(id, false);
+    else if (body.decision === "approve_panel") await startReview(id, true);
     else if (body.decision === "reject") await rejectJob(id);
     else return opaqueError(400);
     return json({ accepted: true });

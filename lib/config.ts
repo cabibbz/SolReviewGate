@@ -14,7 +14,9 @@ export const config = {
   reasoning: process.env.SOL_REASONING || "medium",
   protocolVersion: process.env.SOL_PROTOCOL_VERSION || "alignment-v1",
   sandboxName: process.env.SOL_SANDBOX_NAME || "sol-gate-runtime-v1",
-  jobTtlSeconds: numberEnv("SOL_JOB_TTL_SECONDS", 1_200),
+  // A comparison set runs one candidate at a time and then waits for an operator selection,
+  // so an unanswered packet stays valid far longer than a single run needs.
+  jobTtlSeconds: numberEnv("SOL_JOB_TTL_SECONDS", 3_600),
   resultTtlSeconds: numberEnv("SOL_RESULT_TTL_SECONDS", 7 * 24 * 60 * 60),
   maxPacketBytes: numberEnv("SOL_MAX_PACKET_BYTES", 8 * 1024 * 1024),
   maxChunkBytes: 512 * 1024,

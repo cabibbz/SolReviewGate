@@ -48,6 +48,9 @@ The phone retains the operator view. It can show the packet, observable model ev
 | Phone only diagnostics | Keeps withholding reasons, raw events, internal classifications, and protocol fingerprints in the PWA |
 | Retained history | Encrypts review packets and results with configurable retention from 1 to 30 days |
 | Named clients | Creates a separate credential for every Claude computer and revokes one without interrupting the others |
+| Run configuration | Chooses the reviewing model, reasoning effort, and alignment protocol in the PWA without a redeploy |
+| Comparison candidates | Runs one packet under several configurations and releases only the response the operator selects |
+| Repeat runs | Runs a retained packet again under another configuration as a phone only record after the packet is answered |
 | Alignment lab | Separates released reviews, model withholding, wrapper blocks, worker failures, and infrastructure failures by protocol version |
 | Public demo | Shows the complete mobile interface with sample data and no access to private accounts or records |
 | PWA operation | Installs on a phone home screen and remains usable across ordinary mobile navigation and reconnects |
@@ -131,6 +134,54 @@ Add a focus after the command when needed:
 
 The skill uses the context already visible in the ongoing Claude Code session. It asks Claude to include exact file paths, line numbers, command output, URLs, document titles, screenshots, errors, and other sources that materially support the decision.
 
+## Choose The Model And Alignment Protocol
+
+The reviewing configuration lives in the running PWA, not in a redeploy. Open **Lab** and use **Run configuration** to set:
+
+| Control | Effect |
+| --- | --- |
+| ChatGPT model | The model Codex uses for the review. Pick a suggested id or enter another id your Codex account can use |
+| Reasoning effort | `minimal`, `low`, `medium`, or `high` |
+| Alignment protocol | The review policy sent with every packet |
+
+The supplied protocols are:
+
+| Protocol | Recorded version | Behavior |
+| --- | --- | --- |
+| Baseline | `alignment-v1` | Reviews as far as the transferred evidence permits. Evidence gaps are findings, and withholding is reserved for a genuine refusal |
+| Neutral control | `alignment-control-v1` | States the task and the output contract with no disposition guidance, so unprompted withholding can be measured |
+| Strict citation | `alignment-strict-v1` | Baseline contract plus source mapping for every material claim, a required counterargument, and explicit confidence calibration |
+
+**Apply** stores the selection on the server. A running review keeps the configuration it started with, so a change takes effect on the next packet you approve. Every run records the model, reasoning effort, protocol version, and policy hash it used, and the Alignment Lab groups outcomes by model and protocol version.
+
+The environment values `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` remain the deployment defaults for a deployment that has never been configured from the phone.
+
+## Compare Several Responses And Choose One
+
+**Run configuration** also holds a **comparison set** of up to six configurations. When the set is not empty, an approval offers **Approve with N candidates**:
+
+1. Each configuration reviews the same packet in its own isolated Sandbox, one after another.
+2. Nothing reaches Claude while the candidates run. The review waits in `AWAITING_SELECTION`.
+3. The phone shows every candidate with its model, protocol, outcome, transcript, and full response.
+4. **Release** sends exactly one candidate to Claude. **Release nothing** answers with the fixed terminal response.
+
+Rules that this selection does not bend:
+
+| Rule | Behavior |
+| --- | --- |
+| One answer per packet | A packet is answered once. After a release or a withheld decision the answer cannot be replaced |
+| Only gate passing candidates | A candidate that withheld, was blocked, or failed cannot be selected for release |
+| Unselected stays private | Every candidate that was not released remains readable only in the paired PWA |
+| Nothing is automatic | If the waiting client gives up before you choose, it receives the fixed terminal response and your later reading of the candidates changes nothing |
+
+Because the operator now chooses which independent review is delivered, a released review is a selected review. Treat the release rate of a comparison set as an operator assisted number, not the raw behavior of one configuration. The Alignment Lab counts every candidate, including the ones that were never released, so the underlying per configuration rates stay visible.
+
+A single configuration is unchanged: one run, released automatically, exactly as before.
+
+The **run again** control on an answered review queues another run of the retained packet under the current configuration. Those runs are recorded for comparison and can never become the client answer.
+
+A comparison set takes as long as its candidates need. `SOL_JOB_TTL_SECONDS` (one hour by default) bounds how long an unanswered packet stays valid, and the client waits for `SOL_GATE_TIMEOUT_MS` (also one hour by default). Raise both together when a set of slow candidates plus your reading time needs longer. An installed client keeps the default it was installed with until it is reinstalled or the variable is set in its environment.
+
 ## Use More Than One Computer
 
 A private deployment can register multiple named Claude clients. Give each computer its own token. The phone shows when each client was last used and can revoke one credential without changing the others.
@@ -208,7 +259,7 @@ The local configuration uses an in memory store and a mock Sandbox. Production m
 | `app` | PWA pages and server API routes |
 | `components` | Phone dashboard and review interface |
 | `lib` | Authentication, cryptography, storage, job lifecycle, gate logic, and Sandbox orchestration |
-| `sandbox` | Isolated worker, output schema, denied tool hook, and review policy |
+| `sandbox` | Isolated worker, output schema, denied tool hook, and the selectable review policies |
 | `plugins/solreview` | Claude Code plugin, `/sol` skill source, and dependency free client |
 | `scripts` | Local configuration, release packaging, icons, and test server helpers |
 | `tests/core` | Gate, auth, packet, schema, storage, and runtime tests |
