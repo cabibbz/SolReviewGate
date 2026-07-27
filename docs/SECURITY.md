@@ -69,6 +69,8 @@ Every search is counted from the transport stream and its query is retained on t
 
 The count is evidence and the review's `externalSources` list is a claim. Where a review names external sources and no search was observed, the phone says so instead of presenting the citations as retrieved. That is the one case an operator cannot otherwise detect.
 
+Retrieved pages are also a way in, not only a way out: text on a page can try to steer the verdict, and the only control against that is the policy's instruction to treat page text as data. On a packet where the verdict matters, run a comparison set that pairs a researched candidate with a packet-only one. The packet-only run cannot be influenced by anything on the web, so disagreement between the two is your injection signal, and the combined release keeps both.
+
 A researched run is fingerprinted as `<protocol>+research` and its policy text differs, so its policy hash differs too. The lab therefore never compares a researched run against a packet-only one.
 
 ## Candidate Selection

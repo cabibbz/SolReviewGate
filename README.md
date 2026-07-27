@@ -309,7 +309,7 @@ A single configuration is unchanged: one run, released automatically, exactly as
 
 The **run again** control on an answered review queues another run of the retained packet under the current configuration. Those runs are recorded for comparison and can never become the client answer.
 
-A comparison set takes as long as its candidates need. `SOL_JOB_TTL_SECONDS` (one hour by default) bounds how long an unanswered packet stays valid, and the client waits for `SOL_GATE_TIMEOUT_MS` (also one hour by default). Raise both together when a set of slow candidates plus your reading time needs longer. An installed client keeps the default it was installed with until it is reinstalled or the variable is set in its environment.
+A comparison set takes as long as its candidates need. `SOL_JOB_TTL_SECONDS` (four hours by default) bounds how long an unanswered packet stays valid, and the client waits for `SOL_GATE_TIMEOUT_MS` (also four hours by default). Raise both together when a set of slow candidates plus your reading time needs longer. An installed client keeps the default it was installed with until it is reinstalled or the variable is set in its environment.
 
 ## Ask Sol The Same Question With `/solute`
 
@@ -332,6 +332,14 @@ Use it to compare two independent attempts at the same problem: Claude's, which 
 `/sol` and `/solute` do not block each other. A parallel answer takes no approval slot, so it can be submitted while a review is still waiting for you.
 
 Both skills come from the same installer. An installation made before `/solute` existed has only `/sol`; run the installer again to add it.
+
+## After Every Deploy
+
+Three checks, in order, about a minute total. Every bug this project has shipped that mattered was invisible to the mocked tests and obvious on the first real run.
+
+1. **Confirm the build actually changed.** Open the menu in the PWA (or `GET /api/health`) and check the build identifier matches the commit you deployed. A stale build is indistinguishable from a broken fix.
+2. **Run one real review.** Submit a small packet with `/sol` and approve it. This exercises the path no mock covers: the real Codex CLI accepting the run configuration.
+3. **If research is part of what you deployed, run one researched review.** The research trace on the result must show a search count. `No search ran` on a packet that plainly needs an external fact is the signal that something between the toggle and the sandbox regressed.
 
 ## Use More Than One Computer
 

@@ -24,6 +24,7 @@ json.dump({
         "hookEventName": "PreToolUse",
         "permissionDecision": "allow" if allowed else "deny",
         "permissionDecisionReason": "Web search is available for this review." if allowed
-        else "No tools are available in this review process.",
+        else ("Only web search is available in this review." if os.path.exists(RESEARCH_MARKER)
+              else "No tools are available in this review process."),
     }
 }, sys.stdout)
