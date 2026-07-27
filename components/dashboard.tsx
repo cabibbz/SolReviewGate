@@ -59,6 +59,7 @@ function ResearchTrace({ source, result }: { source?: ResearchTraceRecord | null
     <div className="content-heading secondary"><span>Research</span><code>{status.label}</code></div>
     <p className="section-copy">{status.detail}</p>
     {status.queries.length > 0 && <><h3>Queries that left the sandbox</h3><ol>{status.queries.map((query, index) => <li key={`${index}:${query}`}>{query}</li>)}</ol></>}
+    {status.note && <><h3>What Codex reported</h3><pre className="research-note">{status.note}</pre></>}
   </section>;
 }
 

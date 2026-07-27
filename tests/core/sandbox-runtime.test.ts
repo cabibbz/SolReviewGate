@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { classifyWorkerFailure, normalizeCodexEvents, observedSearchesForTests, sandboxStatus } from "../../lib/sandbox-runtime";
+import { applyWebSearchMode, classifyWorkerFailure, normalizeCodexEvents, observedSearchesForTests, researchNoteForTests, sandboxStatus } from "../../lib/sandbox-runtime";
 import { getStore, resetMemoryStoreForTests } from "../../lib/store";
 
 test.beforeEach(() => resetMemoryStoreForTests());
@@ -83,18 +83,43 @@ test("the worker only ever asks Codex for a documented web_search variant", asyn
     assert.ok(codexWebSearchVariants.includes(value), `web_search="${value}" is not a Codex variant`);
   }
 
-  // The mode alone is not enough. features.web_search_request decides whether the tool is offered
-  // at all, and setting only the mode is indistinguishable from a model that declined to search:
-  // a clean review, zero search events, and no error anywhere.
-  assert.match(worker, /features\.web_search_request=true/, "a research run never enables the search tool");
-  const featureLine = /\.\.\.\(research \? \["-c", "features\.web_search_request=true"\] : \[\]\)/.exec(worker);
-  assert.ok(featureLine, "the search tool must be enabled for research runs only");
+  // web_search_request is deprecated: Codex enables web search by default and the mode is the only
+  // control. Passing it earns a deprecation notice and settles nothing.
+  assert.doesNotMatch(worker, /web_search_request=/, "the worker passes the deprecated feature flag");
 
+  // The run's own configuration states the mode, so no precedence between -c and config.toml has
+  // to be assumed. The template must carry a placeholder rather than a baked-in value.
   const runtimeConfig = await readFile(new URL("../../sandbox/config.toml", import.meta.url), "utf8");
-  const declared = /web_search\s*=\s*"([a-z]+)"/.exec(runtimeConfig);
-  assert.ok(declared && codexWebSearchVariants.includes(declared[1]), "config.toml declares an unknown web_search variant");
-  assert.equal(declared?.[1], "disabled", "the resting configuration must not reach the web");
-  assert.doesNotMatch(runtimeConfig, /web_search_request/, "the resting configuration must not offer the search tool");
+  assert.match(runtimeConfig, /web_search = "\{\{WEB_SEARCH\}\}"/, "config.toml no longer templates the search mode");
+  assert.doesNotMatch(runtimeConfig, /web_search_request/, "the resting configuration must not name the deprecated feature");
+
+  for (const [research, expected] of [[true, "live"], [false, "disabled"]] as const) {
+    const applied = applyWebSearchMode(Buffer.from(runtimeConfig, "utf8"), research).toString("utf8");
+    const declared = /web_search\s*=\s*"([a-z]+)"/.exec(applied);
+    assert.equal(declared?.[1], expected, `research=${research} wrote the wrong mode`);
+    assert.ok(codexWebSearchVariants.includes(declared?.[1] || ""), "an unknown web_search variant reached the sandbox");
+    assert.doesNotMatch(applied, /\{\{[A-Z_]+\}\}/, "a placeholder reached the sandbox");
+  }
+  // A config that lost its placeholder would silently ship whatever value was baked in.
+  assert.throws(() => applyWebSearchMode(Buffer.from('web_search = "live"', "utf8"), false), /CONFIG_MISSING_WEB_SEARCH/);
+});
+
+test("a researched run that searched nothing keeps Codex's own explanation", () => {
+  const base = { version: 1, exitCode: 0, toolAttempt: false, malformedEvents: false, secretLeak: false, candidate: "{}" };
+  const note = (envelope: Record<string, unknown>) => researchNoteForTests({ ...base, ...envelope } as never);
+
+  // The case that cost five rounds of guessing: a clean review, research on, nothing searched, and
+  // the reason sitting in stderr that a successful run used to discard.
+  assert.match(
+    note({ research: true, searchLog: [], diagnostics: "`[features].web_search_request` is deprecated because web search is enabled by default." }) || "",
+    /deprecated/,
+  );
+  // Nothing to explain: it searched, or research was never on.
+  assert.equal(note({ research: true, searchLog: ["a query"], diagnostics: "noise" }), undefined);
+  assert.equal(note({ research: false, diagnostics: "noise" }), undefined);
+  assert.equal(note({ research: true, searchLog: [], diagnostics: "   " }), undefined);
+  // Bounded, so a chatty run cannot fill the record.
+  assert.equal(note({ research: true, searchLog: [], diagnostics: "x".repeat(9_000) })?.length, 1_200);
 });
 
 test("the worker denies by default, so an unnamed tool type ends the run", () => {
