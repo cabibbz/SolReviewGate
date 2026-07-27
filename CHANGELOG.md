@@ -4,6 +4,9 @@
 
 ### Fixed
 
+* Research searches return results. The mode was `live`, which fetches pages from the open web — something a read-only sandbox with no outbound egress cannot do, so every search came back empty and the reviewer reported that it found no usable source. A real transcript showed exactly that: the reviewer announcing it would check external premises, working for two minutes, and concluding "the web-search attempt returned no usable source". The default is now `cached`, served from an OpenAI maintained index over the connection the model already holds. `SOL_RESEARCH_MODE` accepts `indexed` or `live` where the sandbox has real egress
+* The research trace no longer says the reviewer chose not to search. The same transcript carried no search item at all despite a search having been attempted, so a search that returns nothing need not be reported as an event. Zero observed searches is now stated as what it is — nothing recorded — and points at the review's own account
+
 * A search is recognised by substring rather than an exact item type. The guard required exactly `web_search`, while Codex has been seen emitting `web_search_call`; under the previous anchored form a real search was terminated as a tool attempt, which is the opposite of what the allowance is for
 * A terminated run names what terminated it. `Worker rejected` carried no indication of the cause, so a legitimate item type the guard did not recognise was indistinguishable from a genuine isolation breach
 * A researched run that records no search now reports every distinct item and event kind it emitted. The exact vocabulary Codex uses is not reliably documented, and one real run reports it rather than another round of inference from silence

@@ -23,6 +23,10 @@ export const config = {
   // Four hours: a comparison set of slow candidates plus the operator actually reading them. An
   // expired packet silently answers the client with the terminal response, so the default errs long.
   jobTtlSeconds: numberEnv("SOL_JOB_TTL_SECONDS", 14_400),
+  // cached and indexed are served from OpenAI's index over the connection the model already holds.
+  // live fetches pages from the open web, which this sandbox cannot reach, so it silently finds
+  // nothing. Only raise this on a deployment whose sandbox has real outbound egress.
+  researchMode: ["cached", "indexed", "live"].includes(process.env.SOL_RESEARCH_MODE || "") ? (process.env.SOL_RESEARCH_MODE as "cached" | "indexed" | "live") : "cached" as "cached" | "indexed" | "live",
   resultTtlSeconds: numberEnv("SOL_RESULT_TTL_SECONDS", 7 * 24 * 60 * 60),
   maxPacketBytes: numberEnv("SOL_MAX_PACKET_BYTES", 8 * 1024 * 1024),
   maxChunkBytes: 512 * 1024,
