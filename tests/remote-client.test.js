@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { randomBytes } = require("node:crypto");
 const { createServer } = require("node:http");
-const { access, mkdtemp, writeFile } = require("node:fs/promises");
+const { access, mkdir, mkdtemp, writeFile } = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
@@ -19,8 +19,10 @@ async function runClient(url, packet, extraEnv = {}) {
   await writeFile(configPath, `\uFEFF${JSON.stringify({ url, token: "client-token-1234567890" })}`);
   await writeFile(packetPath, packet);
   return new Promise((resolve, reject) => {
+    const { SOL_CLIENT_CWD: cwd, ...env } = extraEnv;
     const child = spawn(process.execPath, [clientPath, packetPath], {
-      env: { ...process.env, SOL_GATE_CONFIG: configPath, SOL_GATE_POLL_MS: "25", SOL_GATE_TIMEOUT_MS: "3000", ...extraEnv },
+      cwd: cwd || process.cwd(),
+      env: { ...process.env, SOL_GATE_CONFIG: configPath, SOL_GATE_POLL_MS: "25", SOL_GATE_TIMEOUT_MS: "3000", ...env },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -132,4 +134,56 @@ test("remote client removes a temporary Sol packet before network work", async (
     child.on("close", resolve);
   });
   await assert.rejects(access(packetPath));
+});
+
+test("remote client attaches declared files and folders, and refuses the dangerous ones", async () => {
+  const project = await mkdtemp(path.join(os.tmpdir(), "sol-project-"));
+  await writeFile(path.join(project, "answer.ts"), "export const answer = 42;\n");
+  await mkdir(path.join(project, "src"), { recursive: true });
+  await writeFile(path.join(project, "src", "one.ts"), "export const one = 1;\n");
+  await writeFile(path.join(project, "src", "two.ts"), "const token = \"sk-abcdefghijklmnopqrstuvwxyz\";\nexport const two = 2;\n");
+  await mkdir(path.join(project, "node_modules"), { recursive: true });
+  await writeFile(path.join(project, "node_modules", "ignored.js"), "module.exports = 1;\n");
+  await writeFile(path.join(project, ".env"), "SOL_MASTER_KEY_BASE64=supersecretvalue\n");
+  const outside = await mkdtemp(path.join(os.tmpdir(), "sol-outside-"));
+  await writeFile(path.join(outside, "private.txt"), "not for the reviewer\n");
+
+  const packet = [
+    "# SOL REVIEW PACKET",
+    "",
+    "## Source Manifest",
+    "S1 | answer.ts",
+    "",
+    "## Attached Paths",
+    "answer.ts",
+    "src",
+    ".env",
+    "node_modules",
+    "missing-file.ts",
+    path.join(outside, "private.txt"),
+    "",
+  ].join("\n");
+
+  await withServer("Bob Regress", async (url, chunks) => {
+    const result = await runClient(url, packet, { SOL_CLIENT_CWD: project });
+    assert.equal(result.code, 0);
+    const uploaded = gunzipSync(Buffer.concat([...chunks.entries()].sort((a, b) => a[0] - b[0]).map(([, value]) => value))).toString("utf8");
+
+    // Declared files arrive verbatim, with the digest of what was on disk.
+    assert.match(uploaded, /=== BEGIN ATTACHED FILE answer\.ts sha256:[a-f0-9]{64} ===\nexport const answer = 42;/);
+    assert.match(uploaded, /=== BEGIN ATTACHED FILE src\/one\.ts sha256:[a-f0-9]{64} ===\nexport const one = 1;/);
+    assert.match(uploaded, /export const two = 2;/);
+
+    // A credential line inside an attached file is replaced, and the file itself is not resent.
+    assert.doesNotMatch(uploaded, /sk-abcdefghijklmnopqrstuvwxyz/);
+    assert.match(uploaded, /\[REDACTED LINE\]/);
+
+    // Credential files, excluded directories, missing paths, and anything outside the tree never leave.
+    assert.doesNotMatch(uploaded, /supersecretvalue/);
+    assert.doesNotMatch(uploaded, /not for the reviewer/);
+    assert.doesNotMatch(uploaded, /module\.exports = 1/);
+    assert.match(uploaded, /Not attached:.*credential file/);
+    assert.match(uploaded, /outside the working directory/);
+    assert.match(uploaded, /not found/);
+  });
 });

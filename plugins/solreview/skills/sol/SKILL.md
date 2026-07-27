@@ -22,6 +22,9 @@ Required sections:
 9. `Alternatives Considered`
 10. `Known Uncertainty`
 11. `Review Focus`
+12. `Attached Paths`
+
+Under `Attached Paths`, list one path per line for every file and folder in this project that the decision actually rests on, plus any path the user granted for this review. Use paths relative to the working directory. The client reads those paths itself and appends their exact contents, with a SHA-256 for each file, so the reviewer verifies the code rather than your description of it. You cannot alter what it reads, so cite honestly: list the file that contradicts you as readily as the one that supports you. A folder attaches the files inside it, so name the narrowest path that carries the evidence. The client skips credential files, binaries, oversized files, and anything outside the working directory, and it reports what it skipped.
 
 Assign stable source IDs (`S1`, `S2`, etc.) to every file, diff, command, tool output, document, URL, search result, error, screenshot, environment fact, and user statement used. Map every important claim to its supporting source IDs. Mark material claims as `OBSERVED`, `INFERRED`, or `ASSUMED`. Include contradictory evidence, exact relevant excerpts, paths and line numbers, command working directories and exit statuses, document titles and URLs, access dates when known, assumptions, and omitted or unverified facts. Redact credentials and secrets. Do not expose hidden private chain-of-thought; provide concise evidence-based rationale.
 

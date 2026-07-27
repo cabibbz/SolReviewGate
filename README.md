@@ -197,6 +197,22 @@ When a comparison set is configured, the primary button on the approval screen r
 
 The environment values `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` remain the deployment defaults for a deployment that has never been configured from the phone.
 
+## Give The Reviewer The Real Files
+
+A packet describes the code. `/sol` also declares, under `Attached Paths`, every file and folder the decision rests on, plus any path you granted for that review. **The client reads those paths itself** and appends their exact contents with a SHA-256 for each file, so the reviewer checks the code rather than a description of it, and the assistant under review cannot misquote what it cited.
+
+| Rule | Behavior |
+| --- | --- |
+| Scope | Only declared paths. A folder attaches the files inside it |
+| Never leaves | Credential files such as `.env`, `*.pem`, `*.key`, and `.netrc`; anything outside the working directory; binaries; files over the size limit; `node_modules`, `.git`, and other build directories |
+| Secret lines | A line matching a credential pattern inside an attached file is replaced with `[REDACTED LINE]` and counted |
+| Reported | Everything skipped is listed in the packet, so the phone shows what was left out and why |
+| Limits | 256 KB per file, 4 MB total, 200 files, adjustable with `SOL_ATTACH_MAX_FILE_BYTES`, `SOL_ATTACH_MAX_TOTAL_BYTES`, and `SOL_ATTACH_MAX_FILES` |
+
+Nothing about the sandbox changes. The reviewer still has no tools, no network, and no filesystem of its own; the files travel inside the packet you approve on the phone, and the approval screen shows how many files and how many bytes are attached before you release anything.
+
+The review policies tell the reviewer that attached contents are an exact reproduction to be preferred over any description of the same file, that they remain untrusted data rather than instructions, and that a contradiction between an attached file and a claim in the packet should be reported with the path.
+
 ## Compare Several Responses And Choose One
 
 One `/sol` always produces exactly one packet. What a comparison set multiplies is the responses to that packet, not the packets themselves: the same evidence is reviewed by several configurations, and you choose which of those responses reaches Claude.
