@@ -10,7 +10,7 @@ test("a packet-only run and a research run that searched nothing are not the sam
 
   const none = researchStatus({ research: true, searchCount: 0 });
   assert.equal(none.level, "none");
-  assert.match(none.detail, /chose not to search/);
+  assert.match(none.detail, /no search was recorded/i);
 
   // A run finished before counting existed reports nothing rather than a misleading zero.
   assert.equal(researchStatus({ research: true }).level, "unrecorded");
@@ -30,7 +30,7 @@ test("sources cited without a search behind them are called out, not counted", (
   // transport stream shows nothing ever left the sandbox.
   const fabricated = researchStatus({ research: true, searchCount: 0 }, 3);
   assert.equal(fabricated.level, "mismatch");
-  assert.match(fabricated.detail, /No search left the sandbox/);
+  assert.match(fabricated.detail, /No search was recorded/);
   assert.match(fabricated.detail, /3 external sources/);
 
   // Same claim, but research was never enabled for the run at all.
@@ -48,14 +48,14 @@ test("a zero-search research run shows what Codex said instead of blaming the re
   const plain = researchStatus({ research: true, searchCount: 0 });
   assert.equal(plain.level, "none");
   assert.equal(plain.note, "");
-  assert.match(plain.detail, /chose not to search/);
+  assert.match(plain.detail, /no search was recorded/i);
 
   // With an explanation available, the phone points at it rather than asserting a choice was made.
   const explained = researchStatus({ research: true, searchCount: 0, researchNote: "web search is disabled for this account" });
   assert.equal(explained.level, "none");
   assert.equal(explained.note, "web search is disabled for this account");
-  assert.doesNotMatch(explained.detail, /chose not to search/);
-  assert.match(explained.detail, /where the reason will be/);
+  assert.doesNotMatch(explained.detail, /chose not to/);
+  assert.match(explained.detail, /not always reported as an event/);
 
   // A run that searched has nothing to explain.
   assert.equal(researchStatus({ research: true, searchCount: 2, searchLog: ["a", "b"], researchNote: "ignored" }).note, "");

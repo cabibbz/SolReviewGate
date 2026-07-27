@@ -54,18 +54,21 @@ export function researchStatus(run?: ResearchTrace | null, citedSources = 0): Re
   if (run.searchCount === 0) {
     if (cited > 0) {
       return {
-        label: "Cited sources without searching",
-        detail: `No search left the sandbox, yet the review names ${cited} external ${sources}. Treat them as unverified.`,
+        label: "Cited sources with no search recorded",
+        detail: `No search was recorded, yet the review names ${cited} external ${sources}. A search returning nothing is not always reported as an event, so check the review's account before relying on them.`,
         queries: [],
         note: run.researchNote || "",
         level: "mismatch",
       };
     }
+    // Never call this a choice. A real transcript shows the reviewer stating it attempted a search
+    // and found nothing usable, while the event stream carried no search item at all: a search that
+    // returns nothing need not be reported as one. Absence of evidence, stated as such.
     return {
-      label: "No search ran",
+      label: "No search observed",
       detail: run.researchNote
-        ? "Research was allowed and no search left the sandbox. Codex reported the following, which is where the reason will be if there is one."
-        : "Research was allowed and the reviewer chose not to search. This review rests on the packet alone.",
+        ? "Research was allowed and no search was recorded. A search that returned nothing is not always reported as an event, so read the review's own account alongside this."
+        : "Research was allowed and no search was recorded. That can mean the reviewer did not need one, or that a search returned nothing and was never reported as an event. The review's own text usually says which.",
       queries: [],
       note: run.researchNote || "",
       level: "none",

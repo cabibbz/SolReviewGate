@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applyWebSearchMode, classifyWorkerFailure, normalizeCodexEvents, observedSearchesForTests, researchNoteForTests, sandboxStatus } from "../../lib/sandbox-runtime";
+import { applyWebSearchMode, classifyWorkerFailure, configuredResearchMode, normalizeCodexEvents, observedSearchesForTests, researchNoteForTests, sandboxStatus } from "../../lib/sandbox-runtime";
 import { getStore, resetMemoryStoreForTests } from "../../lib/store";
 
 test.beforeEach(() => resetMemoryStoreForTests());
@@ -77,9 +77,12 @@ test("the worker only ever asks Codex for a documented web_search variant", asyn
   const assignments = [...worker.matchAll(/web_search="?\$\{[^}]*\}"?|web_search="([a-z]+)"/g)];
   assert.ok(assignments.length > 0, "the worker no longer sets web_search");
 
-  const values = [...worker.matchAll(/research \? "([a-z]+)" : "([a-z]+)"/g)].flatMap((match) => [match[1], match[2]]);
-  assert.deepEqual(values, ["live", "disabled"]);
-  for (const value of values) {
+  // The mode is chosen by the runtime now, because `live` fetches pages the sandbox cannot reach.
+  assert.match(worker, /web_search="\$\{research \? researchMode : "disabled"\}"/, "the worker no longer takes the mode from the runtime");
+  const offered = /\["cached", "indexed", "live"\]\.includes/.exec(worker);
+  assert.ok(offered, "the worker must validate the mode against the documented variants");
+  assert.match(worker, /: "cached";/, "the default mode must be one that works without sandbox egress");
+  for (const value of ["cached", "indexed", "live", "disabled"]) {
     assert.ok(codexWebSearchVariants.includes(value), `web_search="${value}" is not a Codex variant`);
   }
 
@@ -93,8 +96,8 @@ test("the worker only ever asks Codex for a documented web_search variant", asyn
   assert.match(runtimeConfig, /web_search = "\{\{WEB_SEARCH\}\}"/, "config.toml no longer templates the search mode");
   assert.doesNotMatch(runtimeConfig, /web_search_request/, "the resting configuration must not name the deprecated feature");
 
-  for (const [research, expected] of [[true, "live"], [false, "disabled"]] as const) {
-    const applied = applyWebSearchMode(Buffer.from(runtimeConfig, "utf8"), research).toString("utf8");
+  for (const [research, expected] of [[true, "cached"], [false, "disabled"]] as const) {
+    const applied = applyWebSearchMode(Buffer.from(runtimeConfig, "utf8"), research, "cached").toString("utf8");
     const declared = /web_search\s*=\s*"([a-z]+)"/.exec(applied);
     assert.equal(declared?.[1], expected, `research=${research} wrote the wrong mode`);
     assert.ok(codexWebSearchVariants.includes(declared?.[1] || ""), "an unknown web_search variant reached the sandbox");
@@ -102,6 +105,10 @@ test("the worker only ever asks Codex for a documented web_search variant", asyn
   }
   // A config that lost its placeholder would silently ship whatever value was baked in.
   assert.throws(() => applyWebSearchMode(Buffer.from('web_search = "live"', "utf8"), false), /CONFIG_MISSING_WEB_SEARCH/);
+
+  // A deployment with real egress can still ask for live, and it reaches the sandbox intact.
+  assert.match(applyWebSearchMode(Buffer.from(runtimeConfig, "utf8"), true, "live").toString("utf8"), /web_search = "live"/);
+  assert.equal(configuredResearchMode(), "cached", "the default must not be the mode that finds nothing here");
 });
 
 test("a stopped run names what stopped it, and a quiet one lists what it emitted", () => {

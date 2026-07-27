@@ -62,6 +62,8 @@ interface WorkerEnvelope {
   observedItems?: string[];
   /** What terminated the run, named, so a rejection is a diagnosis instead of a guess. */
   blockedBy?: string;
+  /** Which search mode the run actually used, so a fruitless search is attributable. */
+  researchMode?: string;
 }
 
 const baseKey = "sol:sandbox:base";
@@ -162,6 +164,7 @@ function researchNote(envelope: WorkerEnvelope): string | undefined {
   if (!envelope.research || (envelope.searchLog || []).length > 0) return undefined;
   const parts: string[] = [];
   if (envelope.blockedBy) parts.push(`The run was stopped by ${envelope.blockedBy}.`);
+  if (envelope.researchMode) parts.push(`Search mode was "${envelope.researchMode}".`);
   const items = (envelope.observedItems || []).filter((entry) => typeof entry === "string" && entry.trim());
   if (items.length) parts.push(`This run emitted: ${items.map((entry) => entry.slice(0, 60)).join(", ")}.`);
   const stderr = String(envelope.diagnostics || "").trim();
@@ -245,10 +248,14 @@ async function asset(name: string): Promise<Buffer> {
  * the command line has to override. The worker passes the same value, so the two agree and no
  * precedence between `-c` and config.toml has to be assumed correct.
  */
-export function applyWebSearchMode(config: Buffer, research: boolean): Buffer {
+export function applyWebSearchMode(config: Buffer, research: boolean, mode: string = configuredResearchMode()): Buffer {
   const text = config.toString("utf8");
   if (!text.includes("{{WEB_SEARCH}}")) throw new Error("CONFIG_MISSING_WEB_SEARCH");
-  return Buffer.from(text.replace("{{WEB_SEARCH}}", research ? "live" : "disabled"), "utf8");
+  return Buffer.from(text.replace("{{WEB_SEARCH}}", research ? mode : "disabled"), "utf8");
+}
+
+export function configuredResearchMode(): "cached" | "indexed" | "live" {
+  return config.researchMode;
 }
 
 async function writeRuntimeAssets(sandbox: Sandbox, research = false): Promise<void> {
@@ -535,6 +542,7 @@ async function startCandidate(id: string, candidate: ReviewCandidate, store: Sto
         SOL_GATE_POLICY_BASE64: policy.toString("base64"),
         SOL_OUTPUT_SCHEMA: schemaPath,
         SOL_RESEARCH: candidate.research ? "1" : "0",
+        SOL_RESEARCH_MODE: configuredResearchMode(),
       },
       detached: true,
     });

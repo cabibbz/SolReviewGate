@@ -61,7 +61,9 @@ Three controls remain, and one is relaxed:
 
 1. The worker terminates the run and releases nothing on any command, file change, MCP, or other unexpected event. Only search and fetch events are exempt, and only when the run was started with research enabled. This is the control that makes a review hermetic, because it sees the entire event stream.
 2. The `PreToolUse` hook denies shell, `unified_exec`, `apply_patch`, and MCP. It is a narrow first line rather than a universal one: Codex routes only those tools through `PreToolUse`, so web search and several other tools never reach it, and Codex honors only a `deny` decision. Do not read it as the reason a packet-only review is hermetic; the worker is.
-3. Codex enables web search by default, so the mode is the only control. Each run's own `config.toml` is written with `web_search = "live"` for a researched run and `web_search = "disabled"` for every other, and the worker passes the same value on the command line. The two agree, so no override precedence has to be assumed correct. The deprecated `features.web_search_request` is not used.
+3. Codex enables web search by default, so the mode is the only control. Each run's own `config.toml` is written with the research mode for a researched run and `web_search = "disabled"` for every other, and the worker passes the same value on the command line. The two agree, so no override precedence has to be assumed correct. The deprecated `features.web_search_request` is not used.
+
+The default research mode is `cached`, which is served from an OpenAI maintained index rather than fetched from the open web. That is not only what works inside a read only sandbox with no outbound egress; it is also the narrower channel, because the reviewer reads pre indexed results instead of arbitrary live pages. `SOL_RESEARCH_MODE` accepts `indexed` or `live` for a deployment whose sandbox has real egress, and `live` widens the prompt injection surface accordingly.
 
 A `live` search fetches pages as well as issuing queries, so a researched run may emit fetch events. That is the same disclosed egress channel as the query that produced it, and both are counted and shown.
 

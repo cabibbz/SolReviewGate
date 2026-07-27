@@ -8,6 +8,11 @@ const reasoning = process.env.SOL_REASONING || "medium";
 const policy = Buffer.from(process.env.SOL_GATE_POLICY_BASE64 || "", "base64").toString("utf8");
 const outputSchema = /^\/opt\/solgate\/[a-z-]+\.json$/.test(process.env.SOL_OUTPUT_SCHEMA || "") ? process.env.SOL_OUTPUT_SCHEMA : "/opt/solgate/review-schema.json";
 const research = process.env.SOL_RESEARCH === "1";
+// `live` fetches pages from the open web, which a read-only sandbox with restricted egress cannot
+// do: the search returns nothing and the reviewer reports that it found no usable source. `cached`
+// and `indexed` are served from OpenAI's own index over the connection the model already has, so
+// they work here. Default to cached; a deployment with full egress can ask for live.
+const researchMode = ["cached", "indexed", "live"].includes(process.env.SOL_RESEARCH_MODE || "") ? process.env.SOL_RESEARCH_MODE : "cached";
 
 function redact(value, secrets) {
   let output = String(value || "");
@@ -62,11 +67,9 @@ const args = [
   "--strict-config", "--dangerously-bypass-hook-trust",
   "--model", model,
   "-c", `model_reasoning_effort=\"${reasoning}\"`,
-  // Web search is on by default in Codex, and `web_search` is the only control: disabled, cached,
-  // indexed, or live. `features.web_search_request` is deprecated for exactly that reason and is
-  // not passed. The same value is written into this run's config.toml, so the two agree and no
-  // override precedence has to be assumed.
-  "-c", `web_search="${research ? "live" : "disabled"}"`,
+  // Web search is on by default in Codex, and `web_search` is the only control. The same value is
+  // written into this run's config.toml, so the two agree and no override precedence is assumed.
+  "-c", `web_search="${research ? researchMode : "disabled"}"`,
   "-c", "approval_policy=\"never\"",
   "--sandbox", "read-only",
   "--skip-git-repo-check",
@@ -165,6 +168,7 @@ const envelope = {
   // What the run actually emitted, so the next failure is read rather than inferred.
   observedItems: [...observedItems].slice(0, 40),
   blockedBy,
+  researchMode: research ? researchMode : "",
   // The queries leave this sandbox, so the operator sees exactly what left. Phone only, like the
   // rest of the candidate record.
   searchLog: searchLog.map((entry) => redact(entry, secrets)),
