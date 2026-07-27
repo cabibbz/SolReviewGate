@@ -30,6 +30,7 @@ export interface Job {
   research?: boolean;
   searchCount?: number;
   searchLog?: string[];
+  researchNote?: string;
   selectedCandidateId?: string;
   runs?: RunSummary[];
 }
@@ -61,6 +62,7 @@ export interface Candidate {
   research?: boolean;
   searchCount?: number;
   searchLog?: string[];
+  researchNote?: string;
   internalCode?: string;
   releasable?: boolean;
   postRelease?: boolean;

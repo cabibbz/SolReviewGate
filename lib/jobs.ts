@@ -208,7 +208,7 @@ export async function candidateRaw(id: string, candidateId: string, store: Store
 export async function saveCandidateResult(
   id: string,
   candidateId: string,
-  outcome: { output: string; raw: string; releasable: boolean; internalCode: string; searchLog?: string[] },
+  outcome: { output: string; raw: string; releasable: boolean; internalCode: string; searchLog?: string[]; researchNote?: string },
   store: Store = getStore(),
 ): Promise<ReviewCandidate> {
   const job = await store.get<ReviewJob>(jobKey(id));
@@ -223,6 +223,7 @@ export async function saveCandidateResult(
     internalCode: outcome.internalCode,
     releasable: outcome.releasable,
     ...(outcome.searchLog ? { searchCount: outcome.searchLog.length, searchLog: outcome.searchLog } : {}),
+    ...(outcome.researchNote ? { researchNote: outcome.researchNote } : {}),
   }, store);
   const summary: RunSummary = {
     candidateId,
@@ -536,6 +537,7 @@ export async function publishCandidate(id: string, candidateId: string, store: S
     research: candidate.research,
     searchCount: candidate.searchCount,
     searchLog: candidate.searchLog,
+    researchNote: candidate.researchNote,
   });
 }
 

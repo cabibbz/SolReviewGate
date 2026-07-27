@@ -163,6 +163,10 @@ The first two are observations; the third is a claim. A packet-only run records 
 
 The trace is copied onto the job when a candidate is released, and a combined release sums the searches of every candidate it merged.
 
+## Research Diagnosis
+
+A successful run keeps its candidate and discards its diagnostics, which is precisely the run where "research was on and nothing searched" needs explaining. When a researched run records no search, the tail of Codex's stderr is retained on the candidate and shown on the phone under the research trace. A deprecation notice, a rejected setting, or a provider message therefore reaches the operator instead of being inferred from silence.
+
 ## Protocol Versioning
 
 Every run records:

@@ -144,6 +144,22 @@ function observedSearches(envelope: WorkerEnvelope): string[] | undefined {
   return Array.isArray(envelope.searchLog) ? envelope.searchLog.map((entry) => String(entry).slice(0, 200)).slice(0, 50) : [];
 }
 
+/**
+ * A successful run discards its diagnostics, because the candidate is what matters. That is exactly
+ * the run where "research was on and nothing searched" needs explaining, and Codex says why on
+ * stderr -- a deprecation notice, a rejected setting, a provider message. Keep the tail for that
+ * one case so the phone can show the reason instead of leaving it to be guessed at.
+ */
+export function researchNoteForTests(envelope: WorkerEnvelope): string | undefined {
+  return researchNote(envelope);
+}
+
+function researchNote(envelope: WorkerEnvelope): string | undefined {
+  if (!envelope.research || (envelope.searchLog || []).length > 0) return undefined;
+  const text = String(envelope.diagnostics || "").trim();
+  return text ? text.slice(-1_200) : undefined;
+}
+
 export function normalizeCodexEvents(value: string, fallbackAt = Date.now(), scope = "codex"): ReviewEvent[] {
   return value.split("\n").flatMap<ReviewEvent>((line, index): ReviewEvent[] => {
     if (!line.trim()) return [];
@@ -214,13 +230,24 @@ async function asset(name: string): Promise<Buffer> {
   return readFile(path.join(process.cwd(), "sandbox", name));
 }
 
-async function writeRuntimeAssets(sandbox: Sandbox): Promise<void> {
+/**
+ * The search mode is written into the run's own configuration rather than left at a resting value
+ * the command line has to override. The worker passes the same value, so the two agree and no
+ * precedence between `-c` and config.toml has to be assumed correct.
+ */
+export function applyWebSearchMode(config: Buffer, research: boolean): Buffer {
+  const text = config.toString("utf8");
+  if (!text.includes("{{WEB_SEARCH}}")) throw new Error("CONFIG_MISSING_WEB_SEARCH");
+  return Buffer.from(text.replace("{{WEB_SEARCH}}", research ? "live" : "disabled"), "utf8");
+}
+
+async function writeRuntimeAssets(sandbox: Sandbox, research = false): Promise<void> {
   await sandbox.fs.mkdir("/opt/solgate", { recursive: true });
   await sandbox.fs.mkdir("/tmp/sol-review-empty", { recursive: true });
   await sandbox.fs.mkdir("/home/vercel-sandbox/.codex", { recursive: true });
   const files = await Promise.all(["worker.mjs", "block-tools.py", "config.toml", "review-schema.json", "answer-schema.json"].map(async (name) => ({
     path: name === "config.toml" ? "/home/vercel-sandbox/.codex/config.toml" : `/opt/solgate/${name}`,
-    content: await asset(name),
+    content: name === "config.toml" ? applyWebSearchMode(await asset(name), research) : await asset(name),
     mode: name.endsWith(".py") ? 0o700 : 0o600,
   })));
   await sandbox.writeFiles(files);
@@ -485,7 +512,7 @@ async function startCandidate(id: string, candidate: ReviewCandidate, store: Sto
   try {
     sandbox = await Sandbox.create({ source: { type: "snapshot", snapshotId: base.snapshotId }, timeout: 10 * 60 * 1000 });
     const packet = await readPacket(job, store);
-    await writeRuntimeAssets(sandbox);
+    await writeRuntimeAssets(sandbox, Boolean(candidate.research));
     // The deny hook reads this marker. Without it no tool of any kind is permitted.
     if (candidate.research) await sandbox.fs.writeFile("/opt/solgate/research-enabled", "1", { encoding: "utf8" });
     await sandbox.fs.writeFile("/tmp/sol-review-packet.md", packet, { encoding: "utf8" });
@@ -645,6 +672,7 @@ async function pollCandidate(id: string, candidate: ReviewCandidate, store: Stor
         releasable: false,
         internalCode: invalid ? workerCode : "ANSWER_RECORDED",
         searchLog: observedSearches(envelope),
+        researchNote: researchNote(envelope),
       }, store);
     } else {
       const analysis = invalid ? null : analyzeInternalReview(envelope.candidate);
@@ -654,6 +682,7 @@ async function pollCandidate(id: string, candidate: ReviewCandidate, store: Stor
         releasable: Boolean(!invalid && analysis?.released),
         internalCode: invalid ? workerCode : analysis?.code || "GATE_INVALID_SCHEMA",
         searchLog: observedSearches(envelope),
+        researchNote: researchNote(envelope),
       }, store);
     }
     if (live && job) await saveCandidateLive(id, candidate.id, live, jobTtl(job), store);

@@ -62,12 +62,11 @@ const args = [
   "--strict-config", "--dangerously-bypass-hook-trust",
   "--model", model,
   "-c", `model_reasoning_effort=\"${reasoning}\"`,
-  // Two separate settings, and both are required. `web_search` selects the MODE (disabled, cached,
-  // indexed, live) while `features.web_search_request` decides whether the search tool is offered
-  // to the model at all. Setting only the mode leaves the model with no search tool, which looks
-  // exactly like a model that chose not to search: a clean review, zero search events, no error.
+  // Web search is on by default in Codex, and `web_search` is the only control: disabled, cached,
+  // indexed, or live. `features.web_search_request` is deprecated for exactly that reason and is
+  // not passed. The same value is written into this run's config.toml, so the two agree and no
+  // override precedence has to be assumed.
   "-c", `web_search="${research ? "live" : "disabled"}"`,
-  ...(research ? ["-c", "features.web_search_request=true"] : []),
   "-c", "approval_policy=\"never\"",
   "--sandbox", "read-only",
   "--skip-git-repo-check",

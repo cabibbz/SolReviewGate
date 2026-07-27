@@ -44,6 +44,8 @@ export interface ReviewCandidate {
   searchCount?: number;
   /** The queries that left the sandbox. Phone only. */
   searchLog?: string[];
+  /** What Codex said on stderr when research was on and nothing was searched. Phone only. */
+  researchNote?: string;
   codexVersion?: string;
   policyHash?: string;
   schemaHash?: string;
@@ -85,6 +87,7 @@ export interface ReviewJob {
   research?: boolean;
   searchCount?: number;
   searchLog?: string[];
+  researchNote?: string;
   policyHash?: string;
   schemaHash?: string;
   workerHash?: string;

@@ -44,6 +44,23 @@ test("sources cited without a search behind them are called out, not counted", (
   assert.match(researchStatus({ research: true, searchCount: 2, searchLog: ["a", "b"] }, 0).detail, /names no external source/);
 });
 
+test("a zero-search research run shows what Codex said instead of blaming the reviewer", () => {
+  const plain = researchStatus({ research: true, searchCount: 0 });
+  assert.equal(plain.level, "none");
+  assert.equal(plain.note, "");
+  assert.match(plain.detail, /chose not to search/);
+
+  // With an explanation available, the phone points at it rather than asserting a choice was made.
+  const explained = researchStatus({ research: true, searchCount: 0, researchNote: "web search is disabled for this account" });
+  assert.equal(explained.level, "none");
+  assert.equal(explained.note, "web search is disabled for this account");
+  assert.doesNotMatch(explained.detail, /chose not to search/);
+  assert.match(explained.detail, /where the reason will be/);
+
+  // A run that searched has nothing to explain.
+  assert.equal(researchStatus({ research: true, searchCount: 2, searchLog: ["a", "b"], researchNote: "ignored" }).note, "");
+});
+
 test("the worker counts a search once across its started and completed events", async () => {
   // Exercises the shipped function rather than a copy of it: recordSearch is lifted out of
   // worker.mjs and run against the event shapes Codex emits.
