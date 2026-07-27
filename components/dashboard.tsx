@@ -11,6 +11,7 @@ import {
   Database,
   ExternalLink,
   FileText,
+  Globe,
   KeyRound,
   Layers,
   Link2,
@@ -508,6 +509,22 @@ function comparison(rows: Candidate[]): { rows: ComparisonRow[]; agreement: stri
     models: parsed.filter((row) => row.evidence.includes(source)).map((row) => row.label),
   }));
   return { rows: parsed, agreement, evidence };
+}
+
+/**
+ * What approving will authorize beyond the packet. Research is the one egress channel in the
+ * system, so the moment of consent has to say when it is on. Null when every run is packet-only.
+ */
+function approvalResearchNotice(settings?: { research?: boolean; panel: { research?: boolean }[] } | null, panel = false): string | null {
+  if (!settings) return null;
+  if (panel && settings.panel.length) {
+    const researching = settings.panel.filter((slot) => slot.research).length;
+    if (!researching) return null;
+    return researching === settings.panel.length
+      ? `All ${researching} candidates run with web research`
+      : `${researching} of ${settings.panel.length} candidates run with web research`;
+  }
+  return settings.research ? "This review runs with web research" : null;
 }
 
 function ResearchTrace({ source, result }: { source?: ResearchTraceRecord | null; result?: ReadableResult | null }) {
@@ -1095,6 +1112,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
               <a href="/?view=lab">Run several models and choose between them</a>
             </>}</div>}
             {/* With a set configured the comparison is the primary action, because that is what was asked for. */}
+            {approvalResearchNotice(runConfig?.settings, comparisonReady) && <p className="approval-research"><Globe size={14} /> {approvalResearchNotice(runConfig?.settings, comparisonReady)}. Search queries composed from this packet can reach a search provider.</p>}
             <div className="action-bar">
               {comparisonReady
                 ? <><button className="btn primary big" type="button" onClick={() => void decision("approve_panel")} disabled={Boolean(busy)}>{busy === "approve_panel" ? <LoaderCircle className="spin" size={17} /> : <Layers size={17} />} Approve and run {runConfig?.settings.panel.length} responses</button>
@@ -1143,6 +1161,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
               ? <><div><span>Candidates</span><strong>{candidates.length}</strong></div><div><span>Configurations</span><strong>{new Set(candidates.map((candidate) => `${candidate.model}/${candidate.protocolVersion}`)).size}</strong></div></>
               : <><div><span>Model</span><strong>{detail.job.model || "Pending"}</strong></div><div><span>Reasoning</span><strong>{detail.job.reasoning || "Pending"}</strong></div></>}
               <div><span>Duration</span><strong>{formatDuration(detail.job.startedAt, detail.job.completedAt)}</strong></div><div><span>Tokens</span><strong>{(usage.input + usage.output).toLocaleString()}</strong></div><div><span>Outcome</span><strong>{awaitingSelection ? "Awaiting your choice" : outcomeLabel(detail.job.internalCode)}</strong></div><div><span>Protocol</span><strong>{comparing && !detail.job.selectedCandidateId ? "Per candidate" : detail.job.protocolVersion || "Legacy"}</strong></div>{detail.job.research && <div><span>Research</span><strong>{researchStatus(detail.job, readableResult?.externalSources?.length || 0).label}</strong></div>}<div><span>Expires</span><strong>{new Date(detail.job.expiresAt).toLocaleDateString([], { month: "short", day: "numeric" })}</strong></div></div>
+            {detail.job.state === "AWAITING_APPROVAL" && approvalResearchNotice(runConfig?.settings, Boolean(runConfig?.settings.panel.length)) && <p className="approval-research"><Globe size={14} /> {approvalResearchNotice(runConfig?.settings, Boolean(runConfig?.settings.panel.length))}. Search queries composed from this packet can reach a search provider.</p>}
             {detail.job.state === "AWAITING_APPROVAL" && <div className="approval-bar">{detail.packetQuality && <span className="approval-quality">Packet {detail.packetQuality.score}/100</span>}<button className="btn primary" onClick={() => void decision("approve")} disabled={Boolean(busy)}><Check size={16} /> Approve packet</button>{Boolean(runConfig?.settings.panel.length) && <button className="btn" onClick={() => void decision("approve_panel")} disabled={Boolean(busy)}><Layers size={16} /> Approve with {runConfig?.settings.panel.length} candidates</button>}<button className="btn danger" onClick={() => void decision("reject")} disabled={Boolean(busy)}><X size={16} /> Reject</button></div>}
             {comparing && <div className="candidate-strip" ref={candidateStripRef} role="tablist" aria-label="Candidate responses">{candidates.map((candidate) => <button key={candidate.id} role="tab" aria-selected={candidate.id === viewCandidateId} className={`candidate-chip ${candidate.id === viewCandidateId ? "active" : ""} ${candidate.id === detail.job.selectedCandidateId ? "released" : ""}`} onClick={() => { setViewCandidateId(candidate.id); setCandidateDetail(null); }}><strong>{candidate.model}</strong><span>{candidate.protocolVersion} / {candidate.reasoning}</span><em>{candidate.state === "COMPLETE" ? outcomeLabel(candidate.internalCode) : candidate.state === "RUNNING" ? "Running" : "Queued"}{candidate.postRelease ? " / after release" : ""}</em></button>)}</div>}
             {awaitingSelection && <div className="selection-bar"><div className="selection-copy"><strong>Nothing has reached Claude yet.</strong><span>Release the candidate you are reading, release every usable one merged into a single review, or release nothing. This decision is final for the packet.</span></div><div className="toolbar">{viewedCandidate && <button className={`btn ${releaseConfirm === viewedCandidate.id ? "primary" : ""}`} disabled={!viewedCandidate.releasable || viewedCandidate.postRelease || Boolean(busy)} onClick={() => void releaseSelection(viewedCandidate.id)}><Send size={16} /> {releaseConfirm === viewedCandidate.id ? `Confirm release of ${viewedCandidate.model}` : `Release ${viewedCandidate.label}`}</button>}{releasableCandidates > 1 && <button className={`btn ${releaseConfirm === "combined" ? "primary" : ""}`} disabled={Boolean(busy)} onClick={() => void releaseSelection(null, true)}><Layers size={16} /> {releaseConfirm === "combined" ? `Confirm: release all ${releasableCandidates} combined` : `Release all ${releasableCandidates} combined`}</button>}<button className={`btn ${releaseConfirm === "none" ? "danger" : ""}`} disabled={Boolean(busy)} onClick={() => void releaseSelection(null)}><X size={16} /> {releaseConfirm === "none" ? "Confirm: release nothing" : "Release nothing"}</button></div></div>}

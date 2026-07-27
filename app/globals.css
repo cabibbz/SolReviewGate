@@ -285,6 +285,9 @@ button { cursor: pointer; }
 .result-recommendations li { padding-left: 3px; overflow-wrap: anywhere; color: #34403b; font-size: 13px; line-height: 1.55; }
 .private-codex-response { margin-top: 18px; }
 
+.approval-research { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 10px; padding: 9px 11px; border: 1px solid #ddca93; border-left-width: 3px; border-left-color: var(--amber); border-radius: 5px; color: #554214; background: var(--amber-soft); font-size: 12px; line-height: 1.5; }
+.approval-research svg { flex-shrink: 0; margin-top: 2px; }
+
 .research-trace { margin-top: 18px; padding: 12px; border: 1px solid var(--line); border-left-width: 3px; border-radius: 5px; background: var(--surface); }
 .research-trace .content-heading { margin-bottom: 8px; }
 .research-trace .section-copy { margin: 0; }

@@ -259,7 +259,9 @@ async function main() {
   // A parallel answer is recorded for the operator. Nothing is waited for and nothing comes back.
   if (parallel) finish(PARALLEL_ACK);
 
-  const deadline = Date.now() + Number(process.env.SOL_GATE_TIMEOUT_MS || 60 * 60 * 1000);
+  // Matches the server's default job lifetime, so the client does not give up on a packet the
+  // operator is still allowed to answer.
+  const deadline = Date.now() + Number(process.env.SOL_GATE_TIMEOUT_MS || 4 * 60 * 60 * 1000);
   const pollMs = Math.max(25, Number(process.env.SOL_GATE_POLL_MS || 2_000));
   while (Date.now() < deadline) {
     const result = await request(`${url}/api/client/jobs/${encodeURIComponent(initialized.jobId)}/result`, {

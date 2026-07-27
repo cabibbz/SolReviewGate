@@ -20,7 +20,9 @@ export const config = {
   sandboxName: process.env.SOL_SANDBOX_NAME || "sol-gate-runtime-v1",
   // A comparison set runs one candidate at a time and then waits for an operator selection,
   // so an unanswered packet stays valid far longer than a single run needs.
-  jobTtlSeconds: numberEnv("SOL_JOB_TTL_SECONDS", 3_600),
+  // Four hours: a comparison set of slow candidates plus the operator actually reading them. An
+  // expired packet silently answers the client with the terminal response, so the default errs long.
+  jobTtlSeconds: numberEnv("SOL_JOB_TTL_SECONDS", 14_400),
   resultTtlSeconds: numberEnv("SOL_RESULT_TTL_SECONDS", 7 * 24 * 60 * 60),
   maxPacketBytes: numberEnv("SOL_MAX_PACKET_BYTES", 8 * 1024 * 1024),
   maxChunkBytes: 512 * 1024,

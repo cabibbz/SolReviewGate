@@ -4,6 +4,15 @@
 
 ### Added
 
+* Approval discloses research before consent: both approval surfaces state when the run, or how many of the candidates, will have web search, and that queries composed from the packet can reach a search provider
+* `After Every Deploy` checklist in the README: confirm the build stamp, run one real review, and run one researched review when research changed
+* The security model recommends pairing a researched candidate with a packet-only one on packets where the verdict matters, since the packet-only run cannot be steered by anything on the web and disagreement between the two is the injection signal
+
+### Changed
+
+* Default job lifetime raised from one hour to four (`SOL_JOB_TTL_SECONDS=14400`), and the client waits four hours to match, so a comparison set of slow candidates plus the operator's reading time no longer silently answers the packet with the terminal response
+* The deny hook's reason names the one permitted tool in a research run instead of claiming no tools exist
+
 * A research trace on every run that was allowed to search: how many searches actually left the sandbox and the query text of each, counted from the Codex event stream rather than taken from the review's own account. Shown on the review, on each candidate, and in the fact table
 * A review that names external sources with no observed search behind it is called out as such, rather than presented as though the citations were retrieved
 * `EXTERNAL SOURCES` renders on the phone, next to the packet evidence the review cites
