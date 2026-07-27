@@ -58,6 +58,10 @@ interface WorkerEnvelope {
   diagnostics: string;
   research?: boolean;
   searchLog?: string[];
+  /** Every distinct item and event kind the run emitted, reported rather than assumed. */
+  observedItems?: string[];
+  /** What terminated the run, named, so a rejection is a diagnosis instead of a guess. */
+  blockedBy?: string;
 }
 
 const baseKey = "sol:sandbox:base";
@@ -146,9 +150,9 @@ function observedSearches(envelope: WorkerEnvelope): string[] | undefined {
 
 /**
  * A successful run discards its diagnostics, because the candidate is what matters. That is exactly
- * the run where "research was on and nothing searched" needs explaining, and Codex says why on
- * stderr -- a deprecation notice, a rejected setting, a provider message. Keep the tail for that
- * one case so the phone can show the reason instead of leaving it to be guessed at.
+ * the run where "research was on and nothing searched" needs explaining. Keep three things for that
+ * case: what the run emitted, what stopped it if anything did, and what Codex said on stderr. Every
+ * previous answer to this question was inferred from silence, and each one was wrong.
  */
 export function researchNoteForTests(envelope: WorkerEnvelope): string | undefined {
   return researchNote(envelope);
@@ -156,8 +160,14 @@ export function researchNoteForTests(envelope: WorkerEnvelope): string | undefin
 
 function researchNote(envelope: WorkerEnvelope): string | undefined {
   if (!envelope.research || (envelope.searchLog || []).length > 0) return undefined;
-  const text = String(envelope.diagnostics || "").trim();
-  return text ? text.slice(-1_200) : undefined;
+  const parts: string[] = [];
+  if (envelope.blockedBy) parts.push(`The run was stopped by ${envelope.blockedBy}.`);
+  const items = (envelope.observedItems || []).filter((entry) => typeof entry === "string" && entry.trim());
+  if (items.length) parts.push(`This run emitted: ${items.map((entry) => entry.slice(0, 60)).join(", ")}.`);
+  const stderr = String(envelope.diagnostics || "").trim();
+  if (stderr) parts.push(stderr.slice(-1_000));
+  const text = parts.join("\n\n").trim();
+  return text ? text.slice(-1_600) : undefined;
 }
 
 export function normalizeCodexEvents(value: string, fallbackAt = Date.now(), scope = "codex"): ReviewEvent[] {

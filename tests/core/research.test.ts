@@ -74,6 +74,15 @@ test("the worker counts a search once across its started and completed events", 
   const recordSearch = build(searchLog, seenSearches, 50) as (event: unknown, fallback: string) => void;
 
   // One search, reported twice by the same item id.
+  // Both spellings have been seen for a search item, and the guard matches on a substring for
+  // exactly that reason: an anchored list would terminate the run it is meant to permit.
+  const searchGuard = (itemType: string) => /web_search|web_fetch|browser_search/i.test(itemType);
+  for (const itemType of ["web_search", "web_search_call", "web_search_request", "web_fetch"]) {
+    assert.ok(searchGuard(itemType), `${itemType} is not recognised as a search`);
+  }
+  assert.ok(!searchGuard("command_execution"));
+  assert.ok(!searchGuard("apply_patch"));
+
   recordSearch({ type: "item.started", item: { id: "ws_1", type: "web_search_call", query: "codex web_search variants" } }, "web_search_call");
   recordSearch({ type: "item.completed", item: { id: "ws_1", type: "web_search_call", query: "codex web_search variants" } }, "web_search_call");
   assert.deepEqual(searchLog, ["codex web_search variants"]);
