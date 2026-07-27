@@ -4,6 +4,10 @@
 
 ### Fixed
 
+* A search is recognised by substring rather than an exact item type. The guard required exactly `web_search`, while Codex has been seen emitting `web_search_call`; under the previous anchored form a real search was terminated as a tool attempt, which is the opposite of what the allowance is for
+* A terminated run names what terminated it. `Worker rejected` carried no indication of the cause, so a legitimate item type the guard did not recognise was indistinguishable from a genuine isolation breach
+* A researched run that records no search now reports every distinct item and event kind it emitted. The exact vocabulary Codex uses is not reliably documented, and one real run reports it rather than another round of inference from silence
+
 * `features.web_search_request` is no longer passed. It is deprecated because Codex enables web search by default, so it settled nothing and only earned a deprecation notice. The search mode is the whole control
 * Each run's `config.toml` is written with its own search mode rather than resting at `disabled` and relying on the command line to override it. The worker passes the same value, so the two agree and no precedence has to be assumed correct
 * A researched run that records no search keeps the tail of Codex's stderr and shows it on the phone. A successful run discarded its diagnostics, which is exactly the run where the silence needed explaining — the deprecation notice that identified this was never visible in the app at all

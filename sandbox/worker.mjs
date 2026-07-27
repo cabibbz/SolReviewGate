@@ -79,6 +79,10 @@ let stderr = "";
 let finalText = "";
 let toolAttempt = false;
 let malformedEvents = false;
+// Every distinct kind of thing this run emitted, and what ended it if anything did. Guessing the
+// vocabulary from documentation has been wrong repeatedly; one real run reports it instead.
+const observedItems = new Set();
+let blockedBy = "";
 // Observed searches, counted from the transport stream rather than taken from the model's own
 // account of what it did. A run that claims sources it never looked up is visible by comparison.
 const searchLog = [];
@@ -101,17 +105,20 @@ child.stdout.on("data", async (chunk) => {
       const itemType = String(event.item?.type || "");
       const itemMessage = String(event.item?.message || "");
       if (itemType === "error" && itemMessage.includes("--dangerously-bypass-hook-trust")) continue;
-      // Deny by default. The previous form listed the item types to kill on, which let anything it
-      // failed to name through: apply_patch, list_dir, view_image, and every tool type Codex adds
-      // after this was written. A hermetic review is the claim, so the benign set is the one that
-      // gets enumerated, and an item type nobody anticipated ends the run.
-      const benignItem = /^(agent_message|reasoning|agent_reasoning(_delta)?|todo_list|plan|error)$/i.test(itemType);
+      if (itemType || eventType) observedItems.add(itemType ? `item:${itemType}` : `event:${eventType}`);
+      // Deny by default: the benign set is enumerated, so a tool type nobody anticipated ends the
+      // run rather than passing unnoticed. Matching is on a substring, because the exact names are
+      // not reliably documented -- a search has been seen as both `web_search` and `web_search_call`
+      // -- and an anchored list would terminate the very run it is supposed to permit.
+      const benignItem = /^(agent_message|reasoning|agent_reasoning|todo_list|plan|error|token_count|usage)/i.test(itemType);
       // A live search issues queries and reads the pages they return. Both are the same channel,
       // disclosed at approval and counted in the trace.
-      const searching = research && /^(web_search|web_search_request|web_fetch|browser_search)$/i.test(itemType);
-      const structural = !itemType && /^(thread\.started|turn\.started|turn\.completed|turn\.failed|error)$/i.test(eventType);
+      const searching = research && /web_search|web_fetch|browser_search/i.test(itemType);
+      const structural = !itemType && /^(thread\.|turn\.|item\.|error|session)/i.test(eventType);
       if (!benignItem && !searching && !structural) {
         toolAttempt = true;
+        // Naming what stopped the run is the difference between a diagnosis and another guess.
+        if (!blockedBy) blockedBy = itemType ? `item type "${itemType}"` : `event "${eventType}"`;
         child.kill("SIGKILL");
       }
       if (searching) recordSearch(event, itemType || eventType);
@@ -155,6 +162,9 @@ const envelope = {
   candidate: redactedFinal,
   diagnostics: redact(stderr, secrets).slice(-12_000),
   research,
+  // What the run actually emitted, so the next failure is read rather than inferred.
+  observedItems: [...observedItems].slice(0, 40),
+  blockedBy,
   // The queries leave this sandbox, so the operator sees exactly what left. Phone only, like the
   // rest of the candidate record.
   searchLog: searchLog.map((entry) => redact(entry, secrets)),

@@ -104,6 +104,32 @@ test("the worker only ever asks Codex for a documented web_search variant", asyn
   assert.throws(() => applyWebSearchMode(Buffer.from('web_search = "live"', "utf8"), false), /CONFIG_MISSING_WEB_SEARCH/);
 });
 
+test("a stopped run names what stopped it, and a quiet one lists what it emitted", () => {
+  const base = { version: 1, exitCode: 0, toolAttempt: false, malformedEvents: false, secretLeak: false, candidate: "{}", research: true, searchLog: [] };
+  const note = (envelope: Record<string, unknown>) => researchNoteForTests({ ...base, ...envelope } as never) || "";
+
+  // The guard terminating a run used to produce WORKER_REJECTED with no indication of the cause.
+  assert.match(note({ blockedBy: 'item type "web_search_call"' }), /stopped by item type "web_search_call"/);
+
+  // A run that simply did not search reports its vocabulary, which is how the next unknown item
+  // type gets identified from one real run instead of another round of guessing.
+  assert.match(note({ observedItems: ["event:thread.started", "item:agent_message"] }), /emitted: event:thread\.started, item:agent_message/);
+
+  // All three signals travel together when all three exist.
+  const full = note({ blockedBy: 'item type "x"', observedItems: ["item:x"], diagnostics: "codex said something" });
+  assert.match(full, /stopped by/);
+  assert.match(full, /emitted/);
+  assert.match(full, /codex said something/);
+
+  // Nothing to report stays undefined rather than an empty box on the phone.
+  assert.equal(researchNoteForTests({ ...base } as never), undefined);
+  assert.equal(researchNoteForTests({ ...base, searchLog: ["a query"], diagnostics: "noise" } as never), undefined);
+  assert.equal(researchNoteForTests({ ...base, research: false, diagnostics: "noise" } as never), undefined);
+
+  // Bounded, so a chatty run cannot fill the record.
+  assert.ok(note({ diagnostics: "x".repeat(9_000), observedItems: ["item:a"] }).length <= 1_600);
+});
+
 test("a researched run that searched nothing keeps Codex's own explanation", () => {
   const base = { version: 1, exitCode: 0, toolAttempt: false, malformedEvents: false, secretLeak: false, candidate: "{}" };
   const note = (envelope: Record<string, unknown>) => researchNoteForTests({ ...base, ...envelope } as never);
@@ -119,7 +145,7 @@ test("a researched run that searched nothing keeps Codex's own explanation", () 
   assert.equal(note({ research: false, diagnostics: "noise" }), undefined);
   assert.equal(note({ research: true, searchLog: [], diagnostics: "   " }), undefined);
   // Bounded, so a chatty run cannot fill the record.
-  assert.equal(note({ research: true, searchLog: [], diagnostics: "x".repeat(9_000) })?.length, 1_200);
+  assert.ok((note({ research: true, searchLog: [], diagnostics: "x".repeat(9_000) }) || "").length <= 1_600);
 });
 
 test("the worker denies by default, so an unnamed tool type ends the run", () => {
