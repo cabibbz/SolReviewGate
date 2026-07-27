@@ -187,3 +187,35 @@ test("remote client attaches declared files and folders, and refuses the dangero
     assert.match(uploaded, /not found/);
   });
 });
+
+test("remote client finds the attachment section in every heading format a model produces", async () => {
+  const project = await mkdtemp(path.join(os.tmpdir(), "sol-heading-"));
+  await writeFile(path.join(project, "code.ts"), "export const value = 1;\n");
+  await writeFile(path.join(project, "next-section.ts"), "export const stop = true;\n");
+
+  // The formats seen from real assembling models: numbered, bold, label-with-colon, and the
+  // canonical heading. The exact-match detector attached nothing for all but the last.
+  const headings = ["## 12. Attached Paths", "**Attached Paths**", "Attached Paths:", "## `Attached Paths`", "## Granted Paths"];
+  for (const heading of headings) {
+    const packet = [
+      "# SOL REVIEW PACKET",
+      "",
+      "## Source Manifest",
+      "S1 | code.ts",
+      "",
+      heading,
+      "code.ts",
+      "",
+      "**Known Uncertainty**",
+      "next-section.ts is not evidence, it is the next section and must not be attached.",
+      "",
+    ].join("\n");
+    await withServer("Bob Regress", async (url, chunks) => {
+      const result = await runClient(url, packet, { SOL_CLIENT_CWD: project });
+      assert.equal(result.code, 0, `${heading}: client failed`);
+      const uploaded = gunzipSync(Buffer.concat([...chunks.entries()].sort((a, b) => a[0] - b[0]).map(([, value]) => value))).toString("utf8");
+      assert.match(uploaded, /=== BEGIN ATTACHED FILE code\.ts sha256:[a-f0-9]{64} ===/, `${heading}: declared file was not attached`);
+      assert.doesNotMatch(uploaded, /BEGIN ATTACHED FILE next-section\.ts/, `${heading}: read past the end of the section`);
+    });
+  }
+});

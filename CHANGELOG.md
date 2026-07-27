@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+* Packet sections are located by their words, not their markup. The skill showed the section list numbered and backticked, so real packets arrive with `## 1. User Request`, `## \`User Request\``, `**User Request**`, or `User Request:` — and the exact-match analyzer scored those packets as missing every section, while the client's equally exact matcher silently attached no files. Both now normalize numbering, bold, backticks, and trailing colons before comparing, `Granted Paths` satisfies the attachment section in the score as it always did in the client, and both skills now pin the canonical `## User Request` form so future packets need no tolerance
+
 ### Added
 
 * Approval discloses research before consent: both approval surfaces state when the run, or how many of the candidates, will have web search, and that queries composed from the packet can reach a search provider

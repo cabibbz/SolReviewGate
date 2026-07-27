@@ -89,7 +89,6 @@ function validOutput(value) {
 }
 
 
-const ATTACH_HEADING = /^#{1,6}\s*(?:Attached Paths|Granted Paths)\s*$/im;
 const MAX_FILE_BYTES = Number(process.env.SOL_ATTACH_MAX_FILE_BYTES || 256 * 1024);
 const MAX_TOTAL_BYTES = Number(process.env.SOL_ATTACH_MAX_TOTAL_BYTES || 4 * 1024 * 1024);
 const MAX_FILES = Number(process.env.SOL_ATTACH_MAX_FILES || 200);
@@ -103,13 +102,38 @@ const SECRET_LINES = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
 ];
 
+// Headings arrive as `## Attached Paths`, `## 12. Attached Paths`, `**Attached Paths**`, or
+// `Attached Paths:` depending on how the assembling model formatted the section list. Match the
+// words, not the markup — the exact-match version silently attached nothing for three of the four.
+function normalizeHeading(line) {
+  return line
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^\s*\d+[.)]\s*/, "")
+    .replace(/^[*_`\s]+|[*_`:.\s]+$/g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+const SECTION_NAMES = new Set([
+  "user request", "request", "current decision to review", "visible session context",
+  "evidence inventory", "source manifest", "relevant artifacts", "constraints and requirements",
+  "claude decision rationale", "alternatives considered", "known uncertainty", "review focus",
+  "attached paths", "granted paths", "attached file contents",
+]);
+
+function isSectionHeading(line, names) {
+  if (!/^#{1,6}\s+\S/.test(line) && !/^\s*(?:\*\*|__|`)?[^*_`]{1,60}(?:\*\*|__|`)?:?\s*$/.test(line)) return false;
+  return names.has(normalizeHeading(line));
+}
+
 function declaredPaths(packet) {
   const lines = packet.split(/\r?\n/);
-  const start = lines.findIndex((line) => ATTACH_HEADING.test(line));
+  const start = lines.findIndex((line) => isSectionHeading(line, new Set(["attached paths", "granted paths"])));
   if (start < 0) return [];
   const paths = [];
   for (const line of lines.slice(start + 1)) {
-    if (/^#{1,6}\s+\S/.test(line)) break;
+    // The section ends at the next heading in any of the formats a real packet uses.
+    if (/^#{1,6}\s+\S/.test(line) || isSectionHeading(line, SECTION_NAMES)) break;
     const value = line.replace(/^[-*+]\s*/, "").replace(/^\d+[.)]\s*/, "").trim().replace(/^[`"']|[`"']$/g, "");
     if (value) paths.push(value.split("|")[0].trim());
   }
