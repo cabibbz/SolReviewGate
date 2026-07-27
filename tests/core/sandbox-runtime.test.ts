@@ -83,10 +83,51 @@ test("the worker only ever asks Codex for a documented web_search variant", asyn
     assert.ok(codexWebSearchVariants.includes(value), `web_search="${value}" is not a Codex variant`);
   }
 
+  // The mode alone is not enough. features.web_search_request decides whether the tool is offered
+  // at all, and setting only the mode is indistinguishable from a model that declined to search:
+  // a clean review, zero search events, and no error anywhere.
+  assert.match(worker, /features\.web_search_request=true/, "a research run never enables the search tool");
+  const featureLine = /\.\.\.\(research \? \["-c", "features\.web_search_request=true"\] : \[\]\)/.exec(worker);
+  assert.ok(featureLine, "the search tool must be enabled for research runs only");
+
   const runtimeConfig = await readFile(new URL("../../sandbox/config.toml", import.meta.url), "utf8");
   const declared = /web_search\s*=\s*"([a-z]+)"/.exec(runtimeConfig);
   assert.ok(declared && codexWebSearchVariants.includes(declared[1]), "config.toml declares an unknown web_search variant");
   assert.equal(declared?.[1], "disabled", "the resting configuration must not reach the web");
+  assert.doesNotMatch(runtimeConfig, /web_search_request/, "the resting configuration must not offer the search tool");
+});
+
+test("the worker denies by default, so an unnamed tool type ends the run", () => {
+  // The guard used to list the item types to kill on, which let anything unlisted through --
+  // apply_patch, list_dir, and every tool type added after it was written. Now the benign set is
+  // the enumerated one. Mirrors sandbox/worker.mjs exactly.
+  const verdict = (eventType: string, itemType: string, research: boolean) => {
+    const benignItem = /^(agent_message|reasoning|agent_reasoning(_delta)?|todo_list|plan|error)$/i.test(itemType);
+    const searching = research && /^(web_search|web_search_request|web_fetch|browser_search)$/i.test(itemType);
+    const structural = !itemType && /^(thread\.started|turn\.started|turn\.completed|turn\.failed|error)$/i.test(eventType);
+    return (!benignItem && !searching && !structural) ? "kill" : searching ? "record" : "pass";
+  };
+
+  // An ordinary review runs to completion.
+  for (const event of ["thread.started", "turn.started", "turn.completed", "turn.failed"]) {
+    assert.equal(verdict(event, "", false), "pass", `${event} ended a normal review`);
+  }
+  assert.equal(verdict("item.completed", "agent_message", false), "pass");
+  assert.equal(verdict("item.completed", "reasoning", false), "pass");
+
+  // A live search issues queries and reads the pages they return; both are the same channel.
+  assert.equal(verdict("item.completed", "web_search", true), "record");
+  assert.equal(verdict("item.completed", "web_search_request", true), "record");
+  assert.equal(verdict("item.completed", "web_fetch", true), "record");
+
+  // Packet-only runs kill on exactly those events.
+  assert.equal(verdict("item.completed", "web_search", false), "kill");
+  assert.equal(verdict("item.completed", "web_fetch", false), "kill");
+
+  // Research widens nothing beyond the web, including things the old deny list missed entirely.
+  for (const item of ["command_execution", "unified_exec", "apply_patch", "file_change", "mcp_tool_call", "list_dir", "view_image", "tool_search", "a_tool_added_next_year"]) {
+    assert.equal(verdict("item.completed", item, true), "kill", `${item} survived a researched run`);
+  }
 });
 
 test("a rejected sandbox configuration is not reported as a model or gate outcome", () => {

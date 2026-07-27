@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+* A researched run is actually given a search tool. `web_search = "live"` selects the search MODE; `features.web_search_request` decides whether the tool is offered to the model at all. Only the mode was ever set, so the model had no search tool and every researched run looked exactly like a model that chose not to search: a clean review, zero search events, and no error anywhere to notice. Research runs now pass both, and a test fails if either is dropped
+* The worker's isolation guard denies by default. It listed the item types to terminate on, which let through anything it failed to name — `apply_patch`, `list_dir`, `view_image`, and every tool type Codex adds after the list was written. The benign set is now the enumerated one, so an unanticipated item type ends the run instead of passing silently
+* A researched run tolerates the fetch events a `live` search emits, so reading a page it found no longer terminates the run as a tool attempt. Fetches are counted and shown with the queries
+* `docs/SECURITY.md` and `docs/ARCHITECTURE.md` claimed the `PreToolUse` hook denies every tool. Codex routes only shell, `unified_exec`, `apply_patch`, and MCP through `PreToolUse`, and honors only a `deny` decision, so web search and several other tools never reach it. The worker's event-stream check is what makes a review hermetic, and the documents now say so
+
 ### Added
 
 * `update.ps1` and `update.sh`: one command that reads the saved address and token and reinstalls the client and both skills from `main`, so picking up a fix no longer means re-entering anything
