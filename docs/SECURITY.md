@@ -55,6 +55,8 @@ What the session unavoidably knows is that the command was run, because it ran i
 
 A review is hermetic by default: no tools, no network, no filesystem. Enabling research for a configuration changes exactly one thing — the sandbox may perform a web search.
 
+The policy states the reviewer's reach once, in the mode the run is in. A policy that forbids search in its opening sentence and permits it later is obeyed at the opening sentence, so the two statements are generated from the same flag rather than written independently.
+
 Three controls remain, and one is relaxed:
 
 1. The `PreToolUse` hook denies every tool unless the runtime wrote `/opt/solgate/research-enabled` into that sandbox, and even then permits only a search tool. Shell, file changes, patches, and MCP are denied in both modes.

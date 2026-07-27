@@ -10,6 +10,7 @@
 
 ### Fixed
 
+* A research run can actually search. Every policy opened by forbidding web searches unconditionally, stated the reviewer had no network as a fact of construction, and forbade citing any source not reproduced in the packet — then permitted research twelve paragraphs below. The reviewer obeyed the opening prohibition, so every researched run reported no search. The reviewer's reach is now stated once, in the mode the run is actually in, and a policy that loses a placeholder fails the run instead of shipping a mismatched one
 * Turning research on and pressing `Apply` saves it. The dirty check that enables `Apply` never looked at the research field, so the switch could be flipped and the change silently discarded — indistinguishable from a setting that does not work
 * A failed service worker registration no longer throws an unhandled error into the page
 
