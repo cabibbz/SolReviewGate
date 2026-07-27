@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { researchStatus } from "../../lib/research";
+import { fileEvidence, researchStatus } from "../../lib/research";
 
 test("a packet-only run and a research run that searched nothing are not the same thing", () => {
   assert.equal(researchStatus({ research: false }).level, "off");
@@ -110,4 +110,32 @@ test("the worker counts a search once across its started and completed events", 
   assert.equal(searchLog[3].length, 200);
   for (let index = 0; index < 100; index += 1) recordSearch({ item: { id: `bulk_${index}`, query: `bulk ${index}` } }, "web_search_call");
   assert.equal(searchLog.length, 50);
+});
+
+test("file evidence separates what was readable from what the review used", () => {
+  // Sol has no file access: files reach it only as attachments the client pasted into the packet.
+  // So "inspected" means readable, and the second number is how many of those it actually named.
+  const paths = ["DmaKit/overlay.cpp", "DmaKit/vdm.cpp", "src/untouched.ts"];
+  const review = "Attached `DmaKit/vdm.cpp` shows VDM patches a syscall, and overlay.cpp asserts capture as fact.";
+
+  const used = fileEvidence(3, 40_960, paths, review);
+  assert.equal(used.attached, 3);
+  assert.equal(used.cited, 2);
+  assert.deepEqual(used.citedPaths, ["DmaKit/overlay.cpp", "DmaKit/vdm.cpp"]);
+  assert.deepEqual(used.uncitedPaths, ["src/untouched.ts"]);
+
+  // A file named only by its base name still counts, since a review often writes overlay.cpp.
+  assert.equal(fileEvidence(1, 10, ["a/b/c/deep.ts"], "the bug is in deep.ts").cited, 1);
+  // A short base name is not matched loosely, so an incidental word cannot fake a citation.
+  assert.equal(fileEvidence(1, 10, ["src/a.ts"], "a is a common word").cited, 0);
+
+  // Nothing referenced is reported as nothing referenced rather than hidden.
+  const ignored = fileEvidence(2, 100, ["one.ts", "two.ts"], "a review that names no path");
+  assert.equal(ignored.cited, 0);
+  assert.equal(ignored.uncitedPaths.length, 2);
+
+  // A count without paths still reports the count: the packet may have expired out of retention.
+  assert.equal(fileEvidence(7, 2_048, [], "").attached, 7);
+  // No attachments at all stays zero, so the card never renders on a packet that carried none.
+  assert.equal(fileEvidence(0, 0, [], "").attached, 0);
 });

@@ -27,6 +27,8 @@ export interface Job {
   schemaHash?: string;
   workerHash?: string;
   candidateCount?: number;
+  attachedFiles?: number;
+  attachedBytes?: number;
   research?: boolean;
   searchCount?: number;
   searchLog?: string[];
@@ -105,6 +107,7 @@ export interface JobDetail {
     sourceReferences: number;
     attachedFiles: number;
     attachedBytes: number;
+    attachedPaths?: string[];
     issues: string[];
   } | null;
   raw: string | null;

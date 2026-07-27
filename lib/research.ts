@@ -84,3 +84,38 @@ export function researchStatus(run?: ResearchTrace | null, citedSources = 0): Re
     level: "ran",
   };
 }
+
+
+export interface FileEvidence {
+  attached: number;
+  bytes: number;
+  cited: number;
+  citedPaths: string[];
+  uncitedPaths: string[];
+}
+
+/**
+ * Files reach the reviewer only as attachments the client pasted into the packet: it has no file
+ * access of its own. So "inspected" means available to read, and the honest second number is how
+ * many of those the review actually named. A path is counted as cited when the released text
+ * mentions it, or mentions its file name where the full path would be unwieldy.
+ */
+export function fileEvidence(attached: number, bytes: number, paths: string[] = [], reviewText = ""): FileEvidence {
+  const text = reviewText.toLowerCase();
+  const cited: string[] = [];
+  const uncited: string[] = [];
+  for (const raw of paths) {
+    const path = String(raw).trim();
+    if (!path) continue;
+    const base = path.split("/").pop() || path;
+    const named = text.includes(path.toLowerCase()) || (base.length >= 4 && text.includes(base.toLowerCase()));
+    (named ? cited : uncited).push(path);
+  }
+  return {
+    attached: Math.max(attached, paths.length),
+    bytes: Math.max(0, bytes),
+    cited: cited.length,
+    citedPaths: cited,
+    uncitedPaths: uncited,
+  };
+}

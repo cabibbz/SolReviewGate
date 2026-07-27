@@ -359,6 +359,20 @@ sh -c "$(curl -fsSL 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/mai
 
 Restart Claude Code afterwards so the updated skills load. Updating the server is separate: deploy the repository to Vercel as usual.
 
+## How Much The Reviewer Actually Read
+
+Sol has no file access. Files reach it only as the attachments the client pasted into the packet, so what a run could read is exactly what `## Attached Paths` produced.
+
+Every review reports both halves of that:
+
+| Shown | Means |
+| --- | --- |
+| `Files read: 3 of 7` | Seven files were readable, three are referenced in the review |
+| `Files read: 7 attached` | Seven were readable and none are referenced |
+| Nothing shown | The packet carried no attachments, so every claim about the code is a description |
+
+The result view lists the referenced paths separately from the ones that were attached and never mentioned. A file nothing refers to did no work, and that gap is usually the more useful number: it says whether the evidence you sent was the evidence the decision turned on.
+
 ## After Every Deploy
 
 Three checks, in order, about a minute total. Every bug this project has shipped that mattered was invisible to the mocked tests and obvious on the first real run.

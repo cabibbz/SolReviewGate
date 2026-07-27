@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+* Every run reports how many files it could read and how many of those the review actually referenced. The count is taken once when the packet passes its integrity checks and stored on the job, so history and the answered review report it without decrypting a packet again. History rows carry it, the run fact table shows `Files read`, and the result view lists the referenced paths separately from the attached-but-never-mentioned ones — an attachment nothing refers to did no work, and that gap is the number worth seeing
+* `analyzePacketQuality` names the attached paths as well as counting them
+
 ### Fixed
 
 * The research trace shows the queries rather than the tool name. A working run listed eight searches as the strings `web_search` and `webrun`, because the extractor named one field and the query was not in it. Both the worker and the hook now find a query string under any query-like key at any reasonable depth, handle an input encoded as JSON text, and — when there genuinely is none — name the fields that were present instead of showing a tool name where a query belongs

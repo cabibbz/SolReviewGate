@@ -202,6 +202,38 @@ assert.ok(!(await researchClient.completed).stdout.includes("fixture query"));
 assert.equal((await signedFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ research: false }) })).response.status, 200);
 step("research run recorded the searches that left the sandbox");
 
+// A packet carrying real attachments: the count is taken once at commit and must survive to the
+// phone, because history and the lab report it without decrypting the packet again.
+const attachedDigest = "d".repeat(64);
+const attachedPacket = [
+  packet,
+  "",
+  "## Attached Paths",
+  "src/one.ts",
+  "",
+  `=== BEGIN ATTACHED FILE src/one.ts sha256:${attachedDigest} ===`,
+  "export const one = 1;",
+  "=== END ATTACHED FILE src/one.ts ===",
+  `=== BEGIN ATTACHED FILE src/two.ts sha256:${attachedDigest} ===`,
+  "export const two = 2;",
+  "=== END ATTACHED FILE src/two.ts ===",
+].join("\n");
+const attachedClient = await runClient(enrollment.body.token, attachedPacket);
+const attachedJob = await waitForJob(new Set([firstJob.id, secondJob.id, thirdJob.id, researchJob.id]));
+const attachedPending = await signedFetch(`/api/admin/jobs/${attachedJob.id}`);
+assert.equal(attachedPending.body.job.attachedFiles, 2, "the attachment count was not stored at commit");
+assert.ok(attachedPending.body.job.attachedBytes > 0);
+assert.deepEqual(attachedPending.body.packetQuality.attachedPaths, ["src/one.ts", "src/two.ts"]);
+assert.equal((await signedFetch(`/api/admin/jobs/${attachedJob.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "approve" }) })).response.status, 200);
+assert.equal((await attachedClient.completed).code, 0);
+const attachedDone = await signedFetch(`/api/admin/jobs/${attachedJob.id}`);
+assert.equal(attachedDone.body.job.attachedFiles, 2, "the attachment count did not survive the answered job");
+// A packet with no attachments records none, so the two cases stay distinguishable.
+const plainDetail = await signedFetch(`/api/admin/jobs/${researchJob.id}`);
+assert.equal(plainDetail.body.job.attachedFiles, 0, "a packet with no attachments recorded some");
+assert.deepEqual(plainDetail.body.packetQuality.attachedPaths, []);
+step("attached file count stored at commit and retained on the answered review");
+
 const panel = [
   { model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline" },
   { model: "gpt-5.6-sol", reasoning: "low", protocolId: "control" },
