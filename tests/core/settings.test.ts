@@ -32,8 +32,8 @@ test("unconfigured deployments review with the environment defaults", async () =
 
 test("stores a model, effort, and protocol chosen in the PWA", async () => {
   const store = getStore();
-  const saved = await setReviewSettings({ model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" }, store);
-  assert.deepEqual(saved, { model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict", panel: [] });
+  const saved = await setReviewSettings({ model: "gpt-5.6-terra", reasoning: "high", protocolId: "strict" }, store);
+  assert.deepEqual(saved, { model: "gpt-5.6-terra", reasoning: "high", protocolId: "strict", panel: [] });
   assert.deepEqual(await getReviewSettings(store), saved);
   const { protocol } = await reviewRuntime(store);
   assert.equal(protocol.version, "alignment-strict-v1");
@@ -42,9 +42,9 @@ test("stores a model, effort, and protocol chosen in the PWA", async () => {
 
 test("applies a partial change without dropping the other selections", async () => {
   const store = getStore();
-  await setReviewSettings({ model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" }, store);
+  await setReviewSettings({ model: "gpt-5.6-terra", reasoning: "high", protocolId: "strict" }, store);
   const patched = await setReviewSettings({ protocolId: "control" }, store);
-  assert.deepEqual(patched, { model: "gpt-5.6-codex", reasoning: "high", protocolId: "control", panel: [] });
+  assert.deepEqual(patched, { model: "gpt-5.6-terra", reasoning: "high", protocolId: "control", panel: [] });
 });
 
 test("rejects model names that could reach the Codex command line", async () => {
@@ -52,7 +52,7 @@ test("rejects model names that could reach the Codex command line", async () => 
   for (const model of ["", " ", "-c model_reasoning_effort=\"high\"", "gpt 5.6", "gpt-5.6;rm -rf /", "../etc/passwd", "g", "x".repeat(65)]) {
     await assert.rejects(() => setReviewSettings({ model }, store), (error: unknown) => error instanceof SettingsError && error.code === "INVALID_MODEL");
   }
-  assert.equal(normalizeModel(" gpt-5.1-codex-max "), "gpt-5.1-codex-max");
+  assert.equal(normalizeModel(" gpt-5.6-terra "), "gpt-5.6-terra");
 });
 
 test("rejects unsupported reasoning efforts and unknown protocols", async () => {
@@ -71,7 +71,7 @@ test("falls back to deployment defaults when a stored selection is no longer val
 });
 
 test("offers the deployment default, extra configured models, and the active custom model", async () => {
-  process.env.SOL_MODEL_CHOICES = "deployment-only-model, , gpt-5.6-codex";
+  process.env.SOL_MODEL_CHOICES = "deployment-only-model, , gpt-5.3-codex-spark";
   try {
     const choices = modelChoices("private-custom-model");
     assert.equal(choices[0], defaultReviewSettings().model);
@@ -89,7 +89,7 @@ test("stores a comparison set and falls back to the single active configuration"
   const settings = await setReviewSettings({
     panel: [
       { model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline" },
-      { model: "gpt-5.6-codex", reasoning: "high", protocolId: "strict" },
+      { model: "gpt-5.6-luna", reasoning: "high", protocolId: "strict" },
     ],
   }, store);
   assert.equal(settings.panel.length, 2);
@@ -145,15 +145,28 @@ test("an unknown protocol id resolves to the baseline policy instead of failing 
   assert.equal(resolveProtocol(undefined).file, "review-policy.md");
 });
 
-test("offers only Codex model ids that exist, and never the invented ones", async () => {
+test("offers only Codex model ids that exist and are not retired", async () => {
   const choices = modelChoices();
-  for (const model of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+  for (const model of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]) {
     assert.ok(choices.includes(model), `${model} should be offered`);
   }
-  // These were never real Codex model ids. Codex answers "Model metadata not found" and the run is wasted.
-  for (const model of ["gpt-5.6", "gpt-5.6-codex", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.1", "gpt-5-codex"]) {
-    assert.equal(choices.includes(model), false, `${model} should not be offered`);
+  // Never real Codex ids: Codex answers "Model metadata not found" and the run is wasted.
+  for (const model of ["gpt-5.6", "gpt-5.6-codex", "gpt-5-codex"]) {
+    assert.equal(choices.includes(model), false, `${model} was never a Codex model id`);
   }
+  // Retired 14 April 2026 and 23 July 2026 respectively.
+  for (const model of ["gpt-5.1", "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini", "gpt-5.2-codex", "gpt-5.2", "gpt-5.3-codex"]) {
+    assert.equal(choices.includes(model), false, `${model} is retired and must not be offered`);
+  }
+});
+
+test("accepts every reasoning effort Codex supports, including xhigh", async () => {
+  const store = getStore();
+  for (const effort of ["minimal", "low", "medium", "high", "xhigh"] as const) {
+    assert.equal(normalizeReasoning(effort), effort);
+    assert.equal((await setReviewSettings({ reasoning: effort }, store)).reasoning, effort);
+  }
+  assert.deepEqual([...(await reviewSettingsView(store)).reasoningChoices], ["minimal", "low", "medium", "high", "xhigh"]);
 });
 
 test("a comparison slot carries its own protocol and effort", async () => {

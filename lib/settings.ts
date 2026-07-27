@@ -5,16 +5,21 @@ import { getStore, type Store } from "@/lib/store";
 const settingsKey = "sol:settings:review";
 const settingsTtlSeconds = 10 * 365 * 24 * 60 * 60;
 
-export const reasoningEfforts = ["minimal", "low", "medium", "high"] as const;
+// Codex accepts xhigh for work where quality matters more than latency. Not every model supports every level.
+export const reasoningEfforts = ["minimal", "low", "medium", "high", "xhigh"] as const;
 export type ReasoningEffort = (typeof reasoningEfforts)[number];
 
 /** Codex receives the model as one argv value and the effort inside a `-c` assignment. Both are constrained here. */
 const modelPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{1,63}$/;
 
 /**
- * Model ids the Codex CLI accepts for `--model`. The GPT-5.6 family is Sol, Terra, and Luna;
- * there is no bare `gpt-5.6` and no `gpt-5.6-codex`. Availability still depends on the account
- * and the installed CLI version, so this is a starting list and any other id can be entered.
+ * Model ids the Codex CLI offers, verified against the Codex changelog and the openai/codex
+ * deprecation thread in July 2026. The GPT-5.6 family is Sol, Terra, and Luna: there is no bare
+ * `gpt-5.6` and no `gpt-5.6-codex`. Retired and therefore never offered: `gpt-5.3-codex` and
+ * `gpt-5.2` (sunset 23 July 2026), and `gpt-5.2-codex`, `gpt-5.1-codex-max`, `gpt-5.1-codex`,
+ * `gpt-5.1-codex-mini`, `gpt-5.1`, and `gpt-5` (retired 14 April 2026). `gpt-5.3-codex-spark` is a
+ * Pro only research preview, so it is left out of the list and can still be typed in.
+ * Availability depends on the account and the installed CLI, so any id may still be unavailable.
  */
 const builtInModels = [
   "gpt-5.6-sol",
@@ -23,8 +28,6 @@ const builtInModels = [
   "gpt-5.5",
   "gpt-5.4",
   "gpt-5.4-mini",
-  "gpt-5.3-codex",
-  "gpt-5.2-codex",
 ] as const;
 
 export interface ReviewConfig {

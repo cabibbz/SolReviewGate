@@ -38,6 +38,9 @@
 
 ### Fixed
 
+* Two retired model ids were still being offered. `gpt-5.3-codex` and `gpt-5.2` sunset on 23 July 2026 and are removed, leaving `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, and `gpt-5.4-mini`. A test now fails if a retired or invented id reappears
+* `xhigh` reasoning effort was missing. Codex accepts `minimal`, `low`, `medium`, `high`, and `xhigh`
+
 * The source overlap named candidates by model alone, so one model run under two protocols was indistinguishable. A candidate is now labelled by whatever actually differs: the model, plus the protocol when a model repeats, plus the effort when a model and protocol pair repeats
 
 * The page jumped back up while reading. The candidate strip scrolled itself into view from an inline `ref` callback, which React re-invokes on every render, so each two second poll dragged the page back to the strip. Only the strip scrolls now, horizontally, and only when the selection changes

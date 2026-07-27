@@ -145,15 +145,22 @@ The reviewing configuration lives in the running PWA, not in a redeploy. Open th
 | Reasoning effort | `minimal`, `low`, `medium`, or `high` |
 | Alignment protocol | The review policy sent with every packet |
 
-The suggested models are the ids the Codex CLI accepts for `--model`:
+The suggested models are the ids the Codex CLI offers, checked against the Codex changelog and the OpenAI deprecation thread in July 2026:
 
-| Family | Ids |
+| Id | Role |
 | --- | --- |
-| GPT-5.6 | `gpt-5.6-sol` (strongest), `gpt-5.6-terra` (balanced), `gpt-5.6-luna` (fastest) |
-| Earlier | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini` |
-| Codex specialised | `gpt-5.3-codex`, `gpt-5.2-codex` |
+| `gpt-5.6-sol` | Deep reasoning flagship |
+| `gpt-5.6-terra` | Balanced |
+| `gpt-5.6-luna` | Fast and inexpensive |
+| `gpt-5.5` | Previous generation, still available |
+| `gpt-5.4` | General fallback |
+| `gpt-5.4-mini` | Fast, for lighter work |
 
-There is no bare `gpt-5.6` and no `gpt-5.6-codex`. Availability also depends on the account and the installed CLI version, so a listed id can still be unavailable to a particular deployment. When Codex cannot resolve an id it falls back to generic metadata and the run is wasted; that outcome is recorded as **Model not available to this account** rather than a generic worker failure, and the model name appears in the candidate's raw event stream.
+The GPT-5.6 family is Sol, Terra, and Luna. There is no bare `gpt-5.6` and no `gpt-5.6-codex`. These ids are retired and deliberately not offered: `gpt-5.3-codex` and `gpt-5.2` sunset on 23 July 2026, and `gpt-5.2-codex`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1-codex-mini`, `gpt-5.1`, and `gpt-5` were retired on 14 April 2026. `gpt-5.3-codex-spark` is a Pro only research preview, so it is left out of the list and can still be typed in.
+
+Availability also depends on the account and the installed CLI version, so a listed id can still be unavailable to a particular deployment. When Codex cannot resolve an id it falls back to generic metadata and the run is wasted; that outcome is recorded as **Model not available to this account** rather than a generic worker failure, and the model name appears in the candidate's raw event stream.
+
+Reasoning effort accepts `minimal`, `low`, `medium`, `high`, and `xhigh`. `xhigh` is for work where quality matters more than latency. Not every model supports every level, and an unsupported combination fails the same visible way an unavailable model does.
 
 Every slot in a comparison set carries its own model, protocol, and reasoning effort. Changing the active protocol does not rewrite slots that already exist, so use the slot's own pickers, or **Match protocol and effort above** to bring every slot in line with the active configuration in one tap.
 
