@@ -36,9 +36,11 @@ try {
   Copy-Item -LiteralPath (Join-Path $repositoryRoot "install.ps1") -Destination (Join-Path $output "SolReviewSetup.ps1")
   Copy-Item -LiteralPath (Join-Path $repositoryRoot "install.sh") -Destination (Join-Path $output "SolReviewSetup.sh")
   Copy-Item -LiteralPath (Join-Path $repositoryRoot "uninstall.ps1") -Destination (Join-Path $output "SolReviewRemove.ps1")
+  Copy-Item -LiteralPath (Join-Path $repositoryRoot "UpdateSolReview.cmd") -Destination (Join-Path $output "UpdateSolReview.cmd")
 
   Copy-Item -LiteralPath (Join-Path $repositoryRoot "install.ps1") -Destination (Join-Path $windowsRoot "SolReviewSetup.ps1")
   Copy-Item -LiteralPath (Join-Path $repositoryRoot "uninstall.ps1") -Destination (Join-Path $windowsRoot "SolReviewRemove.ps1")
+  Copy-Item -LiteralPath (Join-Path $repositoryRoot "UpdateSolReview.cmd") -Destination (Join-Path $windowsRoot "UpdateSolReview.cmd")
   Copy-Item -LiteralPath (Join-Path $repositoryRoot "plugins") -Destination $payloadRoot -Recurse
 
   @"
@@ -64,6 +66,9 @@ Sol Review Gate $Version
 3. Paste the client token created in the PWA.
 4. Restart Claude Code and run /sol or /solute.
 
+Later, open UpdateSolReview.cmd to update the client and skills. It needs no
+address or token: the installer already saved them.
+
 The installer writes only to your user profile. It does not modify a project.
 Run SolReviewRemove.ps1 to remove the client, credential, and personal skills.
 "@ | Set-Content -LiteralPath (Join-Path $windowsRoot "README.txt") -Encoding UTF8
@@ -84,7 +89,7 @@ Run SolReviewRemove.ps1 to remove the client, credential, and personal skills.
   $windowsArchive = [IO.Compression.ZipFile]::OpenRead($windowsZip)
   try {
     $windowsEntries = $windowsArchive.Entries.FullName | ForEach-Object { $_.Replace("\", "/") }
-    foreach ($required in @("Install.cmd", "SolReviewSetup.ps1", "SolReviewRemove.ps1", "payload/plugins/solreview/bin/solreview.js", "payload/plugins/solreview/skills/sol/SKILL.md", "payload/plugins/solreview/skills/solute/SKILL.md")) {
+    foreach ($required in @("Install.cmd", "UpdateSolReview.cmd", "SolReviewSetup.ps1", "SolReviewRemove.ps1", "payload/plugins/solreview/bin/solreview.js", "payload/plugins/solreview/skills/sol/SKILL.md", "payload/plugins/solreview/skills/solute/SKILL.md")) {
       if ($windowsEntries -notcontains $required) {
         throw "Windows package is missing $required."
       }

@@ -335,11 +335,23 @@ Both skills come from the same installer. An installation made before `/solute` 
 
 ## Update An Existing Installation
 
-One command, no prompts. It reads the address and token your installer already saved and reinstalls the client and both skills from the current `main`:
+Nothing is prompted. The updater reads the address and token your installer already saved and reinstalls the client and both skills from the current `main`.
+
+**Windows, simplest:** download [`UpdateSolReview.cmd`](https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/UpdateSolReview.cmd) once, keep it anywhere, and double-click it whenever you want to update. It also runs from either shell, which the one-liners below do not.
+
+**Windows PowerShell** (the blue window, or a prompt starting `PS C:\>`):
 
 ```powershell
 irm 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/update.ps1' | iex
 ```
+
+**Windows Command Prompt** (the black window, a prompt starting `C:\>`). `irm` is a PowerShell command and does not exist here, so call PowerShell explicitly:
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/update.ps1' | iex"
+```
+
+**macOS and Linux:**
 
 ```sh
 sh -c "$(curl -fsSL 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/update.sh')"
