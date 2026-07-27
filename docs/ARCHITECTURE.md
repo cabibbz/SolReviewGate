@@ -149,6 +149,20 @@ Each selectable protocol is a policy file in `sandbox` with a stable id and a re
 
 The neutral control states the task and the output contract without disposition guidance, which measures how often the model withholds when it is not told when withholding is appropriate. The strict protocol keeps the baseline disposition rules and adds per claim source mapping, a mandatory counterargument, and confidence calibration rules.
 
+## Research Trace
+
+A run permitted to search records what it did, independently of what it says it did.
+
+| Recorded | Source |
+| --- | --- |
+| `searchCount` | Distinct search items in the Codex event stream, deduplicated by item id |
+| `searchLog` | The query text of each, truncated and capped at 50 |
+| `externalSources` | The reviewer's own list, from its structured response |
+
+The first two are observations; the third is a claim. A packet-only run records neither count nor log, so "research was off" and "research was on and nothing was searched" remain distinguishable. The phone reports the comparison, and names a review that cites external sources without an observed search behind it.
+
+The trace is copied onto the job when a candidate is released, and a combined release sums the searches of every candidate it merged.
+
 ## Protocol Versioning
 
 Every run records:

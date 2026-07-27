@@ -208,7 +208,7 @@ export async function candidateRaw(id: string, candidateId: string, store: Store
 export async function saveCandidateResult(
   id: string,
   candidateId: string,
-  outcome: { output: string; raw: string; releasable: boolean; internalCode: string },
+  outcome: { output: string; raw: string; releasable: boolean; internalCode: string; searchLog?: string[] },
   store: Store = getStore(),
 ): Promise<ReviewCandidate> {
   const job = await store.get<ReviewJob>(jobKey(id));
@@ -222,6 +222,7 @@ export async function saveCandidateResult(
     completedAt: now(),
     internalCode: outcome.internalCode,
     releasable: outcome.releasable,
+    ...(outcome.searchLog ? { searchCount: outcome.searchLog.length, searchLog: outcome.searchLog } : {}),
   }, store);
   const summary: RunSummary = {
     candidateId,
@@ -229,6 +230,7 @@ export async function saveCandidateResult(
     reasoning: completed.reasoning,
     protocolVersion: completed.protocolVersion,
     research: completed.research === true,
+    searchCount: completed.searchCount || 0,
     internalCode: outcome.internalCode,
     releasable: outcome.releasable,
     postRelease: Boolean(completed.postRelease),
@@ -531,6 +533,9 @@ export async function publishCandidate(id: string, candidateId: string, store: S
     schemaHash: candidate.schemaHash,
     workerHash: candidate.workerHash,
     codexVersion: candidate.codexVersion,
+    research: candidate.research,
+    searchCount: candidate.searchCount,
+    searchLog: candidate.searchLog,
   });
 }
 
@@ -566,9 +571,14 @@ export async function releaseCombined(id: string, labels: Record<string, string>
   const combined = combineReviews(entries);
   if (!combined || !isValidClientOutput(combined) || containsDisqualifyingText(combined)) throw new JobError("INVALID_CANDIDATE");
   const raw = JSON.stringify(entries.map((entry) => ({ label: entry.label, output: entry.output })));
+  const researched = candidates.filter((candidate) => candidate.research);
   return saveTerminalResult(id, combined, raw, false, "RELEASED_COMBINED", store, {
     combinedFrom: candidates.map((candidate) => candidate.id),
     selectedCandidateId: undefined,
+    // A combined release reports the searches of every reviewer it merged.
+    research: researched.length > 0,
+    searchCount: researched.reduce((total, candidate) => total + (candidate.searchCount || 0), 0),
+    searchLog: researched.flatMap((candidate) => candidate.searchLog || []).slice(0, 50),
   });
 }
 

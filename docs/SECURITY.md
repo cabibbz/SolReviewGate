@@ -63,6 +63,10 @@ Three controls remain, and one is relaxed:
 
 What this costs is stated plainly. A search query is composed by a model holding the packet in context, so packet content can in principle reach a search provider. That is a real egress channel and it did not exist before. Do not enable research for a packet carrying anything you would not type into a search box. Retrieved pages are also untrusted input, and the policy instructs the reviewer to treat page text as data rather than instruction, but that is a prompt level control with the same limits as every other one in this repository.
 
+Every search is counted from the transport stream and its query is retained on the candidate, so the operator sees exactly what left the sandbox rather than the model's account of it. Queries are phone only, like the rest of the candidate record, and never reach the reviewed client.
+
+The count is evidence and the review's `externalSources` list is a claim. Where a review names external sources and no search was observed, the phone says so instead of presenting the citations as retrieved. That is the one case an operator cannot otherwise detect.
+
 A researched run is fingerprinted as `<protocol>+research` and its policy text differs, so its policy hash differs too. The lab therefore never compares a researched run against a packet-only one.
 
 ## Candidate Selection

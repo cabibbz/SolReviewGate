@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { classifyWorkerFailure, normalizeCodexEvents, sandboxStatus } from "../../lib/sandbox-runtime";
+import { classifyWorkerFailure, normalizeCodexEvents, observedSearchesForTests, sandboxStatus } from "../../lib/sandbox-runtime";
 import { getStore, resetMemoryStoreForTests } from "../../lib/store";
 
 test.beforeEach(() => resetMemoryStoreForTests());
@@ -97,4 +97,25 @@ test("a rejected sandbox configuration is not reported as a model or gate outcom
   assert.equal(codeFor("invalid type: string, expected a boolean"), "SANDBOX_CONFIG_REJECTED");
   assert.equal(codeFor("Model metadata for `gpt-5.6-nope` not found"), "MODEL_UNAVAILABLE");
   assert.equal(codeFor("the run attempted a tool"), "WORKER_REJECTED");
+});
+
+test("a research run always reports its searches, and a packet-only run reports nothing", () => {
+  const envelope: { research?: boolean; searchLog?: string[] } = {};
+
+  // Packet-only: undefined, so "no search ran" and "research was off" stay distinguishable.
+  assert.equal(observedSearchesForTests({ ...envelope }), undefined);
+  assert.equal(observedSearchesForTests({ ...envelope, research: false, searchLog: ["ignored"] }), undefined);
+
+  // Research on, nothing searched: an empty list, not a missing one.
+  assert.deepEqual(observedSearchesForTests({ ...envelope, research: true }), []);
+  assert.deepEqual(observedSearchesForTests({ ...envelope, research: true, searchLog: [] }), []);
+
+  assert.deepEqual(observedSearchesForTests({ ...envelope, research: true, searchLog: ["codex web_search variants", "next.js 15 app router"] }), [
+    "codex web_search variants",
+    "next.js 15 app router",
+  ]);
+
+  const many = observedSearchesForTests({ ...envelope, research: true, searchLog: Array.from({ length: 80 }, (_, index) => `query ${index}`) });
+  assert.equal(many?.length, 50);
+  assert.equal(observedSearchesForTests({ ...envelope, research: true, searchLog: ["x".repeat(500)] })?.[0].length, 200);
 });

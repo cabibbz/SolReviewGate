@@ -56,6 +56,8 @@ interface WorkerEnvelope {
   secretLeak: boolean;
   candidate: string;
   diagnostics: string;
+  research?: boolean;
+  searchLog?: string[];
 }
 
 const baseKey = "sol:sandbox:base";
@@ -129,6 +131,17 @@ export function classifyWorkerFailure(text: string): "MODEL_UNAVAILABLE" | "SAND
   // --strict-config rejects an unknown key or value before the model is ever called.
   if (/Error loading config\.toml|unknown variant|unknown field|invalid type: /.test(text)) return "SANDBOX_CONFIG_REJECTED";
   return "WORKER_REJECTED";
+}
+
+// A research run always reports its searches, even when there were none. A packet-only run reports
+// nothing at all, so "0 searches" and "research was off" stay distinguishable on the phone.
+export function observedSearchesForTests(envelope: { research?: boolean; searchLog?: string[] }): string[] | undefined {
+  return observedSearches(envelope as WorkerEnvelope);
+}
+
+function observedSearches(envelope: WorkerEnvelope): string[] | undefined {
+  if (!envelope.research) return undefined;
+  return Array.isArray(envelope.searchLog) ? envelope.searchLog.map((entry) => String(entry).slice(0, 200)).slice(0, 50) : [];
 }
 
 export function normalizeCodexEvents(value: string, fallbackAt = Date.now(), scope = "codex"): ReviewEvent[] {
@@ -553,21 +566,28 @@ async function finishMockCandidate(id: string, candidate: ReviewCandidate, store
       evidenceCited: ["S1"],
       openQuestions: [],
     });
-    await saveCandidateResult(id, candidate.id, { output: OPAQUE_OUTPUT, raw: answer, releasable: false, internalCode: "ANSWER_RECORDED" }, store);
+    await saveCandidateResult(id, candidate.id, { output: OPAQUE_OUTPUT, raw: answer, releasable: false, internalCode: "ANSWER_RECORDED", searchLog: mockSearchLog(candidate) }, store);
     return;
   }
   const mode = process.env.SOL_MOCK_REVIEW_MODE || "review";
   const withheld = mode === "opaque" || candidate.protocolId === "control";
   const raw = withheld
     ? JSON.stringify({ kind: "opaque", verdict: "OPAQUE", assessment: "", recommendations: [], confidence: "LOW", evidenceCited: [], counterargument: "", withheldReason: "Mock review was withheld." })
-    : JSON.stringify({ kind: "review", verdict: "SOUND", assessment: `The decision is supported by the transferred evidence.${candidate.index > 1 ? ` Reviewed by ${candidate.model} under ${candidate.protocolVersion}.` : ""}`, recommendations: [], confidence: "HIGH", evidenceCited: ["S1"], counterargument: "The fixture does not exercise a real model.", withheldReason: "" });
+    : JSON.stringify({ kind: "review", verdict: "SOUND", assessment: `The decision is supported by the transferred evidence.${candidate.index > 1 ? ` Reviewed by ${candidate.model} under ${candidate.protocolVersion}.` : ""}`, recommendations: [], confidence: "HIGH", evidenceCited: ["S1"], externalSources: candidate.research ? ["https://example.invalid/fixture"] : [], counterargument: "The fixture does not exercise a real model.", withheldReason: "" });
   const analysis = analyzeInternalReview(raw);
   await saveCandidateResult(id, candidate.id, {
     output: analysis.output,
     raw,
     releasable: analysis.released,
     internalCode: config.mockSandbox && analysis.released ? "MOCK" : analysis.code,
+    searchLog: mockSearchLog(candidate),
   }, store);
+}
+
+// The fixture reports a research trace the same way a real run does, so the phone surface that
+// reads it is exercised by the mocked cycle rather than only in production.
+function mockSearchLog(candidate: ReviewCandidate): string[] | undefined {
+  return candidate.research ? [`fixture query for ${candidate.model}`] : undefined;
 }
 
 async function pollCandidate(id: string, candidate: ReviewCandidate, store: Store): Promise<void> {
@@ -599,6 +619,7 @@ async function pollCandidate(id: string, candidate: ReviewCandidate, store: Stor
         raw: envelope.candidate || envelope.diagnostics,
         releasable: false,
         internalCode: invalid ? workerCode : "ANSWER_RECORDED",
+        searchLog: observedSearches(envelope),
       }, store);
     } else {
       const analysis = invalid ? null : analyzeInternalReview(envelope.candidate);
@@ -607,6 +628,7 @@ async function pollCandidate(id: string, candidate: ReviewCandidate, store: Stor
         raw: envelope.candidate || envelope.diagnostics,
         releasable: Boolean(!invalid && analysis?.released),
         internalCode: invalid ? workerCode : analysis?.code || "GATE_INVALID_SCHEMA",
+        searchLog: observedSearches(envelope),
       }, store);
     }
     if (live && job) await saveCandidateLive(id, candidate.id, live, jobTtl(job), store);
