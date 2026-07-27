@@ -165,7 +165,7 @@ The trace is copied onto the job when a candidate is released, and a combined re
 
 ## Search Observation
 
-Codex emits no item for a web tool call in `codex exec --json`. A production run whose two `webrun` calls were refused produced only thread, turn, and message events, so counting searches from the event stream reports zero on a run that searched perfectly. The record is taken from the deny hook instead, which is the one component every tool call passes through.
+A refused tool call emits no item in `codex exec --json`; a permitted one does. A production run whose two `webrun` calls were blocked produced only thread, turn, and message events, while a later run that searched successfully emitted an item per search. So the event stream sees only the searches that ran, and the deny hook sees every attempt together with its input. The hook is the record and the event stream is the fallback, and a permitted call is counted from one of them rather than both.
 
 | Recorded by the hook | Used for |
 | --- | --- |

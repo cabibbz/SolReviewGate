@@ -65,12 +65,19 @@ test("the worker counts a search once across its started and completed events", 
   // Exercises the shipped function rather than a copy of it: recordSearch is lifted out of
   // worker.mjs and run against the event shapes Codex emits.
   const source = await readFile(new URL("../../sandbox/worker.mjs", import.meta.url), "utf8");
-  const declaration = /function recordSearch\(event, fallback\) \{[\s\S]*?\n\}/.exec(source);
-  assert.ok(declaration, "recordSearch is no longer defined in the worker");
+  // recordSearch and the helpers it leans on, lifted whole so the shipped code is what runs here.
+  const lifted = ["const QUERY_KEY =", "function findQuery(", "function describeShape(", "function searchEntry(", "function recordSearch("]
+    .map((start) => {
+      const from = source.indexOf(start);
+      assert.notEqual(from, -1, `${start} is no longer defined in the worker`);
+      const end = source.indexOf("\n}", from);
+      return start.startsWith("const") ? source.slice(from, source.indexOf("\n", from)) : source.slice(from, end + 2);
+    })
+    .join("\n\n");
 
   const searchLog: string[] = [];
   const seenSearches = new Set<string>();
-  const build = new Function("searchLog", "seenSearches", "MAX_SEARCH_LOG", `${declaration[0]}\nreturn recordSearch;`);
+  const build = new Function("searchLog", "seenSearches", "MAX_SEARCH_LOG", `${lifted}\nreturn recordSearch;`);
   const recordSearch = build(searchLog, seenSearches, 50) as (event: unknown, fallback: string) => void;
 
   // One search, reported twice by the same item id.
@@ -92,9 +99,11 @@ test("the worker counts a search once across its started and completed events", 
   assert.deepEqual(searchLog, ["codex web_search variants", "vercel sandbox egress"]);
 
   // No id and no query still counts, so a shape change undercounts rather than disappears.
-  recordSearch({ type: "item.completed", item: { type: "web_search_call" } }, "web_search_call");
+  recordSearch({ type: "item.completed", item: { type: "web_search_call", status: "ok" } }, "web_search_call");
   assert.equal(searchLog.length, 3);
-  assert.equal(searchLog[2], "web_search_call");
+  // A search whose query cannot be located names the fields that were present, so the next run
+  // corrects the extractor instead of showing a tool name where a query belongs.
+  assert.match(searchLog[2], /web_search_call \(query text not found; fields: type, status\)/);
 
   // Long queries are truncated and the log is bounded.
   recordSearch({ item: { id: "ws_long", query: "q".repeat(400) } }, "web_search_call");

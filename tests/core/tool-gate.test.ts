@@ -119,6 +119,57 @@ test("the hook records every call it sees, with the query", () => {
   }
 });
 
+test("the query is found wherever it sits, and its absence names the fields instead", () => {
+  // Eight searches were reported as the strings "web_search" and "webrun" -- tool names presented
+  // as queries -- because the extractor named one key and the query was not under it.
+  const root = mkdtempSync(path.join(os.tmpdir(), "sol-hook-query-"));
+  const marker = path.join(root, "research-enabled");
+  const log = path.join(root, "calls.ndjson");
+  writeFileSync(marker, "1");
+  const script = path.join(root, "hook.py");
+  writeFileSync(script, hookSource
+    .replace('"/opt/solgate/research-enabled"', JSON.stringify(marker))
+    .replace('"/tmp/sol-tool-calls.ndjson"', JSON.stringify(log)));
+
+  try {
+    for (const payload of [
+      { tool_name: "web_search", tool_input: { query: "at the top level" } },
+      { tool_name: "webrun", tool_input: { action: { search: { q: "nested three deep" } } } },
+      { tool_name: "web_search", tool_input: '{"query": "encoded as a json string"}' },
+      { tool_name: "web_search", tool_input: { searchQuery: "camel case" } },
+      { tool_name: "web_search", tool_input: { id: "x", status: "ok" } },
+    ]) {
+      execFileSync("python3", [script], { input: JSON.stringify(payload), encoding: "utf8" });
+    }
+
+    const queries = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line).query);
+    assert.deepEqual(queries.slice(0, 4), [
+      "at the top level",
+      "nested three deep",
+      "encoded as a json string",
+      "camel case",
+    ]);
+    // Not found is reported as not found, with the fields that were there, rather than as a query.
+    assert.match(queries[4], /query text not found; fields: id, status/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a permitted call is counted once, not once per record that saw it", () => {
+  // A permitted call appears in the hook record and again in the event stream. The hook wins
+  // outright, because it alone sees a refused call and it alone carries the tool input.
+  const worker = readFileSync(path.join(process.cwd(), "sandbox", "worker.mjs"), "utf8");
+  assert.match(worker, /searchLog\.length = 0;/, "the worker still merges two records into one count");
+  assert.match(worker, /const permitted = calls\.filter\(\(call\) => call\.decision === "allow"\);/);
+  // Two identical queries are two searches, so the hook record is deliberately not deduplicated.
+  assert.doesNotMatch(
+    worker.slice(worker.indexOf("const permitted =")),
+    /seenSearches\.(has|add)/,
+    "identical queries would collapse into one search",
+  );
+});
+
 test("a failure to record can never turn into a failure to gate", () => {
   // Observation must not be able to break the decision, so the log path is deliberately unwritable.
   const root = mkdtempSync(path.join(os.tmpdir(), "sol-hook-fail-"));

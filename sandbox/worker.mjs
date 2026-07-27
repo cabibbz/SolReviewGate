@@ -40,22 +40,49 @@ async function authSecrets() {
   }
 }
 
+// The query text has never been where it was guessed to be, so look for it rather than naming one
+// field. Any string under a query-ish key at any reasonable depth counts.
+const QUERY_KEY = /^(query|q|search|search_query|searchQuery|term|text|input|prompt|url)$/i;
+
+function findQuery(value, depth = 0) {
+  if (depth > 4 || !value || typeof value !== "object") return "";
+  for (const [key, nested] of Object.entries(value)) {
+    if (QUERY_KEY.test(key) && typeof nested === "string" && nested.trim()) return nested.trim();
+  }
+  for (const nested of Object.values(value)) {
+    const found = findQuery(nested, depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+// When the query cannot be found, report the field names that were there. Guessing produced a list
+// of tool names presented as queries; naming the shape lets the next run correct it in one pass.
+function describeShape(value) {
+  if (!value || typeof value !== "object") return typeof value;
+  return Object.keys(value).slice(0, 8).join(", ") || "no fields";
+}
+
+function searchEntry(query, fallback, payload) {
+  return String(query || `${fallback} (query text not found; fields: ${describeShape(payload)})`).slice(0, 200);
+}
+
 // One entry per distinct search. Codex emits a started and a completed event for the same item, so
 // the item id deduplicates the pair; without one, the query text or a positional key stands in.
 function recordSearch(event, fallback) {
   const item = event.item || {};
-  const query = [item.query, item.action?.query, item.search_query, event.query]
-    .find((value) => typeof value === "string" && value.trim());
+  const query = findQuery(item) || findQuery(event);
   const key = String(item.id || query || `${fallback}:${searchLog.length}`);
   if (seenSearches.has(key) || searchLog.length >= MAX_SEARCH_LOG) return;
   seenSearches.add(key);
-  searchLog.push(String(query || fallback).slice(0, 200));
+  searchLog.push(searchEntry(query, fallback, item));
 }
 
 /**
- * What the deny hook saw. A `webrun` call produces no item in `codex exec --json` -- a run where
- * two of them were refused emitted only thread, turn, and message events -- so the event stream
- * cannot count searches and never could. The hook sees every call, so it is the record.
+ * What the deny hook saw. A refused call emits no item at all -- the run whose two `webrun` calls
+ * were blocked produced only thread, turn, and message events -- while a permitted one does appear.
+ * So the event stream sees only the searches that ran, and the hook sees every attempt along with
+ * its input. The hook is therefore the record, and the stream is the fallback.
  */
 async function hookCalls() {
   try {
@@ -180,15 +207,16 @@ const exitCode = await new Promise((resolve) => {
 
 const redactedFinal = redact(finalText, secrets);
 await writeQueue;
-// The hook's record is authoritative for searches; anything the event stream happened to show is
-// merged in behind it, so a future Codex that does emit an item cannot cause double counting.
+// A permitted call appears in both records: the hook sees it before it runs, the event stream after.
+// Counting both doubles the total, so one wins. The hook wins where it has anything, because it
+// alone sees a refused call and it alone carries the tool input. Identical queries are two searches,
+// so this record is not deduplicated -- each line is one call.
 const calls = await hookCalls();
-for (const call of calls) {
-  if (call.decision !== "allow") continue;
-  const entry = String(call.query || call.tool).slice(0, 200);
-  if (!seenSearches.has(entry) && searchLog.length < MAX_SEARCH_LOG) {
-    seenSearches.add(entry);
-    searchLog.push(entry);
+const permitted = calls.filter((call) => call.decision === "allow");
+if (permitted.length) {
+  searchLog.length = 0;
+  for (const call of permitted.slice(0, MAX_SEARCH_LOG)) {
+    searchLog.push(String(call.query || call.tool).slice(0, 200));
   }
 }
 const refusedTools = [...new Set(calls.filter((call) => call.decision !== "allow").map((call) => String(call.tool).slice(0, 60)))].slice(0, 10);
