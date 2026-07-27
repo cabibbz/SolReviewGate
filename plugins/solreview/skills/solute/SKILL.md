@@ -11,14 +11,14 @@ This is not a review of your work. You are not being evaluated, no answer of you
 
 Do not include your own answer, your plan, your conclusions, or any judgement you have already formed. The point is an independent attempt at the same problem, which a transferred conclusion would contaminate.
 
-Required sections:
+Write every section as a markdown level-two heading containing exactly the section name — `## Request`, not `## 1. Request` or `**Request**` — because the transport locates sections by these headings. In order:
 
-1. `Request` — the user's request, quoted as closely as the session allows, including any constraints they stated.
-2. `Visible Session Context` — what you can see that is needed to answer it: the task, the state of the work, and what has already happened.
-3. `Evidence Inventory` — the file contents, command output, errors, documents, and other material an answer would rest on, reproduced rather than described.
-4. `Source Manifest` — a stable ID for every source, one per line, as `S1 | description`.
-5. `Constraints And Requirements` — anything that bounds an acceptable answer.
-6. `Known Uncertainty` — what is unresolved or unverified in the visible context.
+- `## Request` — the user's request, quoted as closely as the session allows, including any constraints they stated.
+- `## Visible Session Context` — what you can see that is needed to answer it: the task, the state of the work, and what has already happened.
+- `## Evidence Inventory` — the file contents, command output, errors, documents, and other material an answer would rest on, reproduced rather than described.
+- `## Source Manifest` — a stable ID for every source, one per line, as `S1 | description`.
+- `## Constraints And Requirements` — anything that bounds an acceptable answer.
+- `## Known Uncertainty` — what is unresolved or unverified in the visible context.
 
 Write the packet to a temporary file and submit it:
 

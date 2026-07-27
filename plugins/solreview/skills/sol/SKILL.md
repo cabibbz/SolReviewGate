@@ -9,20 +9,22 @@ Assemble a `SOL REVIEW PACKET` for the current decision. Transfer the full visib
 
 Freeze the current decision and its rationale before assembling the packet. Do not improve, defend, soften, or otherwise change the decision to influence the reviewer. Do not tailor evidence selection toward a favorable verdict. Preserve contradictory evidence and uncertainty with the same specificity as supporting evidence. Do not include prior Sol outcomes, speculate about reviewer behavior, or describe the review protocol unless that information is itself materially part of the user's task.
 
-Required sections:
+Write every section as a markdown level-two heading containing exactly the section name — `## User Request`, not `## 1. User Request`, `## \`User Request\``, or `**User Request**`. The transport locates sections by these headings, and a section it cannot locate is scored as missing and, for `Attached Paths`, silently attaches nothing. The required headings, in order:
 
-1. `User Request`
-2. `Current Decision To Review`
-3. `Visible Session Context`
-4. `Evidence Inventory`
-5. `Source Manifest`
-6. `Relevant Artifacts`
-7. `Constraints And Requirements`
-8. `Claude Decision Rationale`
-9. `Alternatives Considered`
-10. `Known Uncertainty`
-11. `Review Focus`
-12. `Attached Paths`
+```markdown
+## User Request
+## Current Decision To Review
+## Visible Session Context
+## Evidence Inventory
+## Source Manifest
+## Relevant Artifacts
+## Constraints And Requirements
+## Claude Decision Rationale
+## Alternatives Considered
+## Known Uncertainty
+## Review Focus
+## Attached Paths
+```
 
 Under `Attached Paths`, list one path per line for every file and folder in this project that the decision actually rests on, plus any path the user granted for this review. Use paths relative to the working directory. The client reads those paths itself and appends their exact contents, with a SHA-256 for each file, so the reviewer verifies the code rather than your description of it. You cannot alter what it reads, so cite honestly: list the file that contradicts you as readily as the one that supports you. A folder attaches the files inside it, so name the narrowest path that carries the evidence. The client skips credential files, binaries, oversized files, and anything outside the working directory, and it reports what it skipped.
 

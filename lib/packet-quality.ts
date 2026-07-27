@@ -25,9 +25,39 @@ export interface PacketQuality {
   issues: string[];
 }
 
+/**
+ * A real packet is written by a model that was shown a numbered, backticked section list, so its
+ * headings arrive as `## 1. User Request`, `## \`User Request\``, `**User Request**`, or
+ * `User Request:` as readily as the canonical form. Matching is against the words, not the markup —
+ * an exact-match analyzer scored every one of those packets zero and reported all sections missing.
+ */
+export function normalizeHeading(line: string): string {
+  return line
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^\s*\d+[.)]\s*/, "")
+    .replace(/^[*_`\s]+|[*_`:.\s]+$/g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function headingCandidates(packet: string): Set<string> {
+  const candidates = new Set<string>();
+  for (const line of packet.split(/\r?\n/)) {
+    // A heading line, a bold or backticked label on its own line, or a short label ending in a
+    // colon. Anything longer than a section name costs nothing: it just never matches one.
+    if (/^#{1,6}\s+\S/.test(line) || /^\s*(?:\*\*|__|`)?[^*_`]{1,60}(?:\*\*|__|`)?:?\s*$/.test(line)) {
+      const normalized = normalizeHeading(line);
+      if (normalized) candidates.add(normalized);
+    }
+  }
+  return candidates;
+}
+
 export function analyzePacketQuality(packet: string): PacketQuality {
-  const headings = new Set([...packet.matchAll(/^#{1,6}\s+(.+?)\s*$/gm)].map((match) => match[1].trim().toLowerCase()));
-  const missing = requiredSections.filter((section) => !headings.has(section.toLowerCase()));
+  const headings = headingCandidates(packet);
+  // The client accepts either name for the attachment section, so the score does too.
+  const missing = requiredSections.filter((section) => !headings.has(section.toLowerCase())
+    && !(section === "Attached Paths" && headings.has("granted paths")));
   const sourceMatches = [...packet.matchAll(/\bS\d+\b/gi)].map((match) => match[0].toUpperCase());
   const sources = new Set(sourceMatches);
   const sourceReferences = Math.max(0, sourceMatches.length - sources.size);
