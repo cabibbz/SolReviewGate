@@ -114,6 +114,8 @@ test("the worker only ever asks Codex for a documented web_search variant", asyn
 test("a stopped run names what stopped it, and a quiet one lists what it emitted", () => {
   const base = { version: 1, exitCode: 0, toolAttempt: false, malformedEvents: false, secretLeak: false, candidate: "{}", research: true, searchLog: [] };
   const note = (envelope: Record<string, unknown>) => researchNoteForTests({ ...base, ...envelope } as never) || "";
+  // Every note now ends by saying whether any tool was refused, which is itself the diagnosis when
+  // the answer is "none": the reviewer never attempted a search at all.
 
   // The guard terminating a run used to produce WORKER_REJECTED with no indication of the cause.
   assert.match(note({ blockedBy: 'item type "web_search_call"' }), /stopped by item type "web_search_call"/);
@@ -129,8 +131,10 @@ test("a stopped run names what stopped it, and a quiet one lists what it emitted
   assert.match(full, /codex said something/);
 
   // Nothing to report stays undefined rather than an empty box on the phone.
-  assert.equal(researchNoteForTests({ ...base } as never), undefined);
+  assert.match(note({}), /called no tool at all/);
+  assert.match(note({ refusedTools: ["apply_patch"] }), /refused these tools: apply_patch/);
   assert.equal(researchNoteForTests({ ...base, searchLog: ["a query"], diagnostics: "noise" } as never), undefined);
+  assert.equal(researchNoteForTests({ ...base, research: false } as never), undefined);
   assert.equal(researchNoteForTests({ ...base, research: false, diagnostics: "noise" } as never), undefined);
 
   // Bounded, so a chatty run cannot fill the record.
@@ -150,7 +154,8 @@ test("a researched run that searched nothing keeps Codex's own explanation", () 
   // Nothing to explain: it searched, or research was never on.
   assert.equal(note({ research: true, searchLog: ["a query"], diagnostics: "noise" }), undefined);
   assert.equal(note({ research: false, diagnostics: "noise" }), undefined);
-  assert.equal(note({ research: true, searchLog: [], diagnostics: "   " }), undefined);
+  // A run with nothing to say still reports that no tool was called, which is the finding.
+  assert.match(note({ research: true, searchLog: [], diagnostics: "   " }) || "", /called no tool at all/);
   // Bounded, so a chatty run cannot fill the record.
   assert.ok((note({ research: true, searchLog: [], diagnostics: "x".repeat(9_000) }) || "").length <= 1_600);
 });
