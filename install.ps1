@@ -2,7 +2,8 @@
 param(
   [string]$Url = $env:SOL_GATE_URL,
   [string]$ClientToken = $env:SOL_GATE_CLIENT_TOKEN,
-  [string]$RepositoryRoot = "",
+  # Same override the shell installer honors, and the only way to pass it through irm | iex.
+  [string]$RepositoryRoot = $env:SOL_REPOSITORY_ROOT,
   [string]$InstallRoot = (Join-Path $HOME ".sol-review"),
   [string]$ClaudeSkillsRoot = (Join-Path $HOME ".claude\skills"),
   [string]$LocalSourceRoot = "",
