@@ -43,16 +43,43 @@ for key in ("tool_name", "toolName", "name"):
 CALL_LOG = "/tmp/sol-tool-calls.ndjson"
 
 
+QUERY_KEY = re.compile(r"^(query|q|search|search_query|searchQuery|term|text|input|prompt|url)$", re.I)
+
+
+def find_query(value, depth=0):
+    """The query has never been under the key it was guessed to be. Look for it by shape."""
+    if depth > 4 or not isinstance(value, (dict, list)):
+        return ""
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if QUERY_KEY.match(str(key)) and isinstance(nested, str) and nested.strip():
+                return nested.strip()[:200]
+        for nested in value.values():
+            found = find_query(nested, depth + 1)
+            if found:
+                return found
+        return ""
+    for nested in value:
+        found = find_query(nested, depth + 1)
+        if found:
+            return found
+    return ""
+
+
 def note_call(tool, decision, payload):
     try:
         supplied = payload.get("tool_input") or payload.get("toolInput") or {}
-        query = ""
-        if isinstance(supplied, dict):
-            for key in ("query", "q", "search", "search_query", "input", "prompt", "url"):
-                value = supplied.get(key)
-                if isinstance(value, str) and value.strip():
-                    query = value.strip()[:200]
-                    break
+        # A hook payload sometimes carries its input as encoded JSON rather than an object.
+        if isinstance(supplied, str):
+            try:
+                supplied = json.loads(supplied)
+            except Exception:
+                supplied = {"text": supplied}
+        query = find_query(supplied)
+        if not query and isinstance(supplied, dict):
+            # Name the fields that were present. A list of tool names presented as queries is what
+            # guessing produced; the shape lets one run correct it.
+            query = f"{tool} (query text not found; fields: {', '.join(list(supplied)[:8]) or 'no fields'})"[:200]
         with open(CALL_LOG, "a", encoding="utf-8") as handle:
             handle.write(json.dumps({"tool": tool[:80], "decision": decision, "query": query}) + "\n")
     except Exception:

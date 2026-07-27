@@ -4,6 +4,10 @@
 
 ### Fixed
 
+* The research trace shows the queries rather than the tool name. A working run listed eight searches as the strings `web_search` and `webrun`, because the extractor named one field and the query was not in it. Both the worker and the hook now find a query string under any query-like key at any reasonable depth, handle an input encoded as JSON text, and — when there genuinely is none — name the fields that were present instead of showing a tool name where a query belongs
+* A permitted search is counted once. It appears in the hook record and again in the event stream, and merging both would have doubled the count as soon as the queries became distinct. The hook record wins outright, since it alone sees a refused call and it alone carries the tool input, and it is deliberately not deduplicated because two identical queries are two searches
+* Corrected in the source: a refused call emits no event item, a permitted one does. The earlier claim that Codex never reports a web call was drawn from a run whose calls were all blocked
+
 * Searches are counted from the deny hook rather than the event stream. Codex emits no item for a web tool call: the run whose two `webrun` calls were refused produced only thread, turn, and message events, so the counter could report zero on a run that searched perfectly and always would have. The hook sees every call, records the tool, the decision, and the query, and the worker reads that record — errors while recording are swallowed so observation can never change the decision
 * A researched run that recorded no search now says whether any tool was refused, or states that the reviewer called no tool at all, which is itself the finding
 
