@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { applyResearchNoteForTests } from "../../lib/sandbox-runtime";
 import test from "node:test";
 import { reviewProtocols, resolveProtocol } from "../../lib/protocols";
 import {
@@ -121,9 +122,15 @@ test("exposes every protocol choice with a distinct recorded version", async () 
 test("every selectable protocol ships a distinct policy that forbids tools and binds the schema", async () => {
   const policies = await Promise.all(reviewProtocols.map((protocol) => readFile(`sandbox/${protocol.file}`, "utf8")));
   for (const policy of policies) {
-    assert.match(policy, /Do not execute or request tools, commands, web searches, files, network access, or external context/);
-    assert.match(policy, /must match the supplied JSON schema exactly/);
-    assert.match(policy, /never released to the reviewed client/);
+    // The file is a template. What binds the run is the text after substitution, in each mode.
+    assert.match(applyResearchNoteForTests(policy, false), /Do not execute or request tools, commands, web searches, files, network access, or external context/);
+    assert.match(applyResearchNoteForTests(policy, true), /Do not execute or request commands, shells, file access, MCP tools, or any other network access/);
+    for (const research of [true, false]) {
+      const rendered = applyResearchNoteForTests(policy, research);
+      assert.match(rendered, /must match the supplied JSON schema exactly/);
+      assert.match(rendered, /never released to the reviewed client/);
+      assert.match(rendered, /You cannot change anything\./);
+    }
   }
   assert.equal(new Set(policies).size, policies.length);
   assert.equal(new Set(reviewProtocols.map((protocol) => protocol.file)).size, reviewProtocols.length);
