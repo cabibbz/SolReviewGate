@@ -10,6 +10,7 @@
 
 ### Changed
 
+* The dashboard's data types, phone signing, formatters, and review parsers moved out of the 1,200-line component into `components/dashboard/` modules. No behavior change; the stateful component is 746 lines and each module is independently readable
 * Default job lifetime raised from one hour to four (`SOL_JOB_TTL_SECONDS=14400`), and the client waits four hours to match, so a comparison set of slow candidates plus the operator's reading time no longer silently answers the packet with the terminal response
 * The deny hook's reason names the one permitted tool in a research run instead of claiming no tools exist
 
