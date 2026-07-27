@@ -62,9 +62,12 @@ const args = [
   "--strict-config", "--dangerously-bypass-hook-trust",
   "--model", model,
   "-c", `model_reasoning_effort=\"${reasoning}\"`,
-  // Codex accepts disabled, cached, indexed, or live. "live" is the only one that reaches the web,
-  // and --strict-config turns any other value into an immediate config load failure.
+  // Two separate settings, and both are required. `web_search` selects the MODE (disabled, cached,
+  // indexed, live) while `features.web_search_request` decides whether the search tool is offered
+  // to the model at all. Setting only the mode leaves the model with no search tool, which looks
+  // exactly like a model that chose not to search: a clean review, zero search events, no error.
   "-c", `web_search="${research ? "live" : "disabled"}"`,
+  ...(research ? ["-c", "features.web_search_request=true"] : []),
   "-c", "approval_policy=\"never\"",
   "--sandbox", "read-only",
   "--skip-git-repo-check",
@@ -99,10 +102,16 @@ child.stdout.on("data", async (chunk) => {
       const itemType = String(event.item?.type || "");
       const itemMessage = String(event.item?.message || "");
       if (itemType === "error" && itemMessage.includes("--dangerously-bypass-hook-trust")) continue;
-      const activity = `${eventType} ${itemType}`;
-      // A researched run may search the web. Everything else still ends the run immediately.
-      const searching = research && /web_search|search/i.test(activity) && !/command|shell|exec|file_change|mcp|patch|apply/i.test(activity);
-      if (!searching && /command|tool|web_search|mcp|file_change/i.test(activity)) {
+      // Deny by default. The previous form listed the item types to kill on, which let anything it
+      // failed to name through: apply_patch, list_dir, view_image, and every tool type Codex adds
+      // after this was written. A hermetic review is the claim, so the benign set is the one that
+      // gets enumerated, and an item type nobody anticipated ends the run.
+      const benignItem = /^(agent_message|reasoning|agent_reasoning(_delta)?|todo_list|plan|error)$/i.test(itemType);
+      // A live search issues queries and reads the pages they return. Both are the same channel,
+      // disclosed at approval and counted in the trace.
+      const searching = research && /^(web_search|web_search_request|web_fetch|browser_search)$/i.test(itemType);
+      const structural = !itemType && /^(thread\.started|turn\.started|turn\.completed|turn\.failed|error)$/i.test(eventType);
+      if (!benignItem && !searching && !structural) {
         toolAttempt = true;
         child.kill("SIGKILL");
       }

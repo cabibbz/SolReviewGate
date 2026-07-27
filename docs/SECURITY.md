@@ -59,9 +59,11 @@ The policy states the reviewer's reach once, in the mode the run is in. A policy
 
 Three controls remain, and one is relaxed:
 
-1. The `PreToolUse` hook denies every tool unless the runtime wrote `/opt/solgate/research-enabled` into that sandbox, and even then permits only a search tool. Shell, file changes, patches, and MCP are denied in both modes.
-2. The worker still terminates the run and releases nothing on any command, file change, or MCP event. Only a search event is exempt, and only when the run was started with research enabled.
-3. The Codex configuration enables `web_search` for that run alone. A packet-only run keeps `web_search = "disabled"`.
+1. The worker terminates the run and releases nothing on any command, file change, MCP, or other unexpected event. Only search and fetch events are exempt, and only when the run was started with research enabled. This is the control that makes a review hermetic, because it sees the entire event stream.
+2. The `PreToolUse` hook denies shell, `unified_exec`, `apply_patch`, and MCP. It is a narrow first line rather than a universal one: Codex routes only those tools through `PreToolUse`, so web search and several other tools never reach it, and Codex honors only a `deny` decision. Do not read it as the reason a packet-only review is hermetic; the worker is.
+3. The search tool is enabled for a researched run alone, by passing both the `web_search = "live"` mode and the `features.web_search_request` feature for that run. A packet-only run passes neither and keeps `web_search = "disabled"`.
+
+A `live` search fetches pages as well as issuing queries, so a researched run may emit fetch events. That is the same disclosed egress channel as the query that produced it, and both are counted and shown.
 
 What this costs is stated plainly. A search query is composed by a model holding the packet in context, so packet content can in principle reach a search provider. That is a real egress channel and it did not exist before. Do not enable research for a packet carrying anything you would not type into a search box. Retrieved pages are also untrusted input, and the policy instructs the reviewer to treat page text as data rather than instruction, but that is a prompt level control with the same limits as every other one in this repository.
 

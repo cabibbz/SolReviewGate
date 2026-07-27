@@ -65,7 +65,7 @@ A model withheld response uses `kind` equal to `opaque` and stores its reason on
 
 ## Isolation
 
-Each review uses a new Sandbox. The runtime configuration disables web and MCP, installs a hook that denies tools, and checks the event stream for tool, command, search, and file mutation attempts. The final candidate also passes a protected data scan.
+Each review uses a new Sandbox. The runtime configuration disables web and MCP, installs a hook that denies the tools Codex routes through `PreToolUse` (shell, `unified_exec`, `apply_patch`, MCP), and checks the event stream for tool, command, search, and file mutation attempts. The event stream check is the universal one, because several tools never reach the hook. The final candidate also passes a protected data scan.
 
 The Sandbox snapshot holds Codex authentication and expires. Review packets are written only into the fresh child Sandbox. A review cannot modify the source deployment.
 
