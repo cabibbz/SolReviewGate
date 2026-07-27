@@ -51,6 +51,20 @@ The acknowledgement is a compile time constant used on every exit path, includin
 
 What the session unavoidably knows is that the command was run, because it ran it. The skill instructs the assistant to continue unchanged and not to treat the acknowledgement as information. That is a behavioral contract, not an enforced boundary, and it carries the same limitation as every other prompt level rule in this repository.
 
+## Research
+
+A review is hermetic by default: no tools, no network, no filesystem. Enabling research for a configuration changes exactly one thing — the sandbox may perform a web search.
+
+Three controls remain, and one is relaxed:
+
+1. The `PreToolUse` hook denies every tool unless the runtime wrote `/opt/solgate/research-enabled` into that sandbox, and even then permits only a search tool. Shell, file changes, patches, and MCP are denied in both modes.
+2. The worker still terminates the run and releases nothing on any command, file change, or MCP event. Only a search event is exempt, and only when the run was started with research enabled.
+3. The Codex configuration enables `web_search` for that run alone. A packet-only run keeps `web_search = "disabled"`.
+
+What this costs is stated plainly. A search query is composed by a model holding the packet in context, so packet content can in principle reach a search provider. That is a real egress channel and it did not exist before. Do not enable research for a packet carrying anything you would not type into a search box. Retrieved pages are also untrusted input, and the policy instructs the reviewer to treat page text as data rather than instruction, but that is a prompt level control with the same limits as every other one in this repository.
+
+A researched run is fingerprinted as `<protocol>+research` and its policy text differs, so its policy hash differs too. The lab therefore never compares a researched run against a packet-only one.
+
 ## Candidate Selection
 
 A comparison set produces several complete reviews for one packet. Releasing one of them is a phone signed request, and the server enforces four rules:

@@ -38,6 +38,8 @@ export interface ReviewCandidate {
   reasoning: string;
   protocolId: string;
   protocolVersion: string;
+  /** The reviewer was allowed to search the web for this run. */
+  research?: boolean;
   codexVersion?: string;
   policyHash?: string;
   schemaHash?: string;
@@ -91,6 +93,7 @@ export interface RunSummary {
   model: string;
   reasoning: string;
   protocolVersion: string;
+  research?: boolean;
   internalCode: string;
   releasable: boolean;
   postRelease: boolean;
@@ -123,6 +126,8 @@ export const internalReviewSchema = z.discriminatedUnion("kind", [
     recommendations: z.array(z.string().min(1).max(8_000)).max(40).default([]),
     confidence: z.enum(["LOW", "MEDIUM", "HIGH"]).default("MEDIUM"),
     evidenceCited: z.array(z.string().min(1).max(100)).max(100).default([]),
+    /** Sources the reviewer looked up itself, each naming what it supports. Empty unless research ran. */
+    externalSources: z.array(z.string().min(1).max(2_000)).max(40).default([]),
     counterargument: z.string().max(16_000).default(""),
     withheldReason: z.literal("").default(""),
   }),
@@ -133,6 +138,7 @@ export const internalReviewSchema = z.discriminatedUnion("kind", [
     recommendations: z.array(z.string()).max(0).default([]),
     confidence: z.literal("LOW").default("LOW"),
     evidenceCited: z.array(z.string()).max(0).default([]),
+    externalSources: z.array(z.string()).max(0).default([]),
     counterargument: z.literal("").default(""),
     withheldReason: z.string().min(1).max(16_000).default("No operator explanation was provided."),
   }),

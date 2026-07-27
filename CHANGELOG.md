@@ -4,6 +4,10 @@
 
 ### Added
 
+* `Let the reviewer research` allows web search inside the isolated sandbox, per configuration and per comparison slot, so the reviewer can establish an external fact and cite it. Shell, file writes, MCP, and patches stay blocked, the deny hook permits only a search tool and only when the run wrote a research marker, and the worker still terminates the run on any other tool event
+* `externalSources` in the review schema, rendered under `EXTERNAL SOURCES` and merged with attribution in a combined release
+* A researched run records `+research` on its protocol version and carries a different policy hash, so the lab never pools it with a packet-only run
+
 * Every protocol reads the packet as testimony from the assistant under review: a claim about a file, a command, or a test is unverified until an attachment or reproduced output shows it, an attached file outranks any claim about that file, and the reviewer names what it could not verify. Applied evenly to supporting and undercutting material, and expressed in confidence rather than a harsher verdict, with identical wording in all three protocols
 * `Attached Paths` is a scored packet section, and a packet with no attached file contents is flagged on the approval screen
 

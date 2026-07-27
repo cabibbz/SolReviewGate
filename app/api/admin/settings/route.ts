@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const raw = await request.text();
   if (!(await verifyAdminRequest(request, raw))) return opaqueError(401);
-  let body: Partial<ReviewSettings>;
+  let body: Partial<ReviewSettings> & { research?: boolean };
   try {
     body = JSON.parse(raw) as Partial<ReviewSettings>;
   } catch {
@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       ...(body.model === undefined ? {} : { model: body.model }),
       ...(body.reasoning === undefined ? {} : { reasoning: body.reasoning }),
       ...(body.protocolId === undefined ? {} : { protocolId: body.protocolId }),
+      ...(body.research === undefined ? {} : { research: body.research === true }),
       ...(body.panel === undefined ? {} : { panel: normalizePanel(body.panel) }),
     });
     return json(await reviewSettingsView());

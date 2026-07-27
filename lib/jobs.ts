@@ -137,7 +137,7 @@ export async function getCandidate(id: string, candidateId: string, store: Store
 
 export async function createCandidate(
   id: string,
-  config: { model: string; reasoning: string; protocolId: string; protocolVersion: string },
+  config: { model: string; reasoning: string; protocolId: string; protocolVersion: string; research?: boolean },
   postRelease: boolean,
   store: Store = getStore(),
 ): Promise<ReviewCandidate> {
@@ -228,6 +228,7 @@ export async function saveCandidateResult(
     model: completed.model,
     reasoning: completed.reasoning,
     protocolVersion: completed.protocolVersion,
+    research: completed.research === true,
     internalCode: outcome.internalCode,
     releasable: outcome.releasable,
     postRelease: Boolean(completed.postRelease),
