@@ -212,6 +212,17 @@ That boundary is structural, not a promise in a prompt. The sandbox grants no to
 
 Because the reviewer cannot act, its recommendations are the only way anything changes. Every policy therefore requires each recommendation to be executable by the assistant under review without asking a follow up question: the exact path, the specific location in the file, what is wrong, what to do instead, and what the result should satisfy. A reviewer must never write a recommendation as though it had already made the change, or claim to have run or verified anything.
 
+## How The Reviewer Treats What Claude Says
+
+The packet is written by the assistant under review, so every policy tells the reviewer to read it as testimony rather than as a neutral record. A statement about what a file contains, what a command printed, or what a test established is a claim until an attached file or reproduced output shows it. Where an attached file and a claim about that file differ, the file is what is true. Where a decisive claim carries no reproduction, the reviewer names it as unverified and says which path or output would settle it.
+
+Two properties keep this from turning into an adversarial stance, which would be worse than no scrutiny at all:
+
+1. It is applied evenly to the parts that support the decision and the parts that undercut it, so it cannot become motivated doubt.
+2. It informs confidence and evidence handling rather than the verdict, so a well-evidenced decision still returns `SOUND` at high confidence and the verdict scale stays calibrated.
+
+The paragraph is worded identically in all three protocols, so a comparison between them measures the protocol rather than this instruction.
+
 ## Give The Reviewer The Real Files
 
 A packet describes the code. `/sol` also declares, under `Attached Paths`, every file and folder the decision rests on, plus any path you granted for that review. **The client reads those paths itself** and appends their exact contents with a SHA-256 for each file, so the reviewer checks the code rather than a description of it, and the assistant under review cannot misquote what it cited.
@@ -222,6 +233,7 @@ A packet describes the code. `/sol` also declares, under `Attached Paths`, every
 | Never leaves | Credential files such as `.env`, `*.pem`, `*.key`, and `.netrc`; anything outside the working directory; binaries; files over the size limit; `node_modules`, `.git`, and other build directories |
 | Secret lines | A line matching a credential pattern inside an attached file is replaced with `[REDACTED LINE]` and counted |
 | Reported | Everything skipped is listed in the packet, so the phone shows what was left out and why |
+| Required | `Attached Paths` is a scored packet section, and a packet that attaches nothing is flagged as leaving every claim about the code unverified |
 | Limits | 256 KB per file, 4 MB total, 200 files, adjustable with `SOL_ATTACH_MAX_FILE_BYTES`, `SOL_ATTACH_MAX_TOTAL_BYTES`, and `SOL_ATTACH_MAX_FILES` |
 
 Nothing about the sandbox changes. The reviewer still has no tools, no network, and no filesystem of its own; the files travel inside the packet you approve on the phone, and the approval screen shows how many files and how many bytes are attached before you release anything.

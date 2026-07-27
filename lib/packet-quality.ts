@@ -10,6 +10,7 @@ const requiredSections = [
   "Alternatives Considered",
   "Known Uncertainty",
   "Review Focus",
+  "Attached Paths",
 ] as const;
 
 export interface PacketQuality {
@@ -38,6 +39,7 @@ export function analyzePacketQuality(packet: string): PacketQuality {
   if (!sources.size) issues.push("No stable source IDs were found.");
   else if (!sourceReferences) issues.push("Source IDs are listed but never cited again in the packet.");
   if (Buffer.byteLength(packet, "utf8") < 800) issues.push("The transferred context is unusually short.");
+  if (!attachments.length) issues.push("No file contents were attached, so every claim about the code is unverified.");
   const sectionPoints = Math.round(((requiredSections.length - missing.length) / requiredSections.length) * 60);
   const sourcePoints = Math.min(20, sources.size * 4);
   const referencePoints = Math.min(20, sourceReferences * 2);
