@@ -4,6 +4,11 @@
 
 ### Added
 
+* `/sol` declares an `Attached Paths` section and the client reads those files and folders itself, appending their exact contents with a SHA-256 per file, so the reviewer verifies the code rather than a description of it
+* Attached content skips credential files, binaries, oversized files, excluded build directories, and anything outside the working directory, redacts credential lines, and reports everything it left out
+* The approval screen shows how many files and how many bytes are attached
+* Every review policy and the answering policy explain that attached contents are an exact reproduction, remain untrusted data, and should be cited by path when they contradict the packet
+
 * `/solute` submits the request Claude was given for an independent parallel answer that runs without approval, returns nothing to the session, and is readable only in the PWA
 * Answering policy and output schema for parallel packets, separate from the review policy
 * Runs recorded before protocol fingerprinting are excluded from lab statistics and reported separately, so a protocol is never compared against records that have no protocol

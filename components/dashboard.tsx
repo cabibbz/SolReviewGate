@@ -126,6 +126,8 @@ interface JobDetail {
     sectionsRequired: number;
     sourceIds: number;
     sourceReferences: number;
+    attachedFiles: number;
+    attachedBytes: number;
     issues: string[];
   } | null;
   raw: string | null;
@@ -1036,7 +1038,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
 
           {!detail || detail.job.id !== attentionJob.id ? <div className="panel empty"><div><LoaderCircle className="spin" size={28} /><p>Opening the review.</p></div></div> : detail.job.state === "AWAITING_APPROVAL" ? <>
             <div className="panel decision-card">
-              {detail.packetQuality && <div className="decision-facts"><div><span>Packet quality</span><strong>{detail.packetQuality.score}/100</strong></div><div><span>Sections</span><strong>{detail.packetQuality.sectionsPresent}/{detail.packetQuality.sectionsRequired}</strong></div><div><span>Sources</span><strong>{detail.packetQuality.sourceIds}</strong></div><div><span>Citations</span><strong>{detail.packetQuality.sourceReferences}</strong></div></div>}
+              {detail.packetQuality && <div className="decision-facts"><div><span>Packet quality</span><strong>{detail.packetQuality.score}/100</strong></div><div><span>Sections</span><strong>{detail.packetQuality.sectionsPresent}/{detail.packetQuality.sectionsRequired}</strong></div><div><span>Sources</span><strong>{detail.packetQuality.sourceIds}</strong></div><div><span>Citations</span><strong>{detail.packetQuality.sourceReferences}</strong></div>{detail.packetQuality.attachedFiles > 0 && <div><span>Files attached</span><strong>{detail.packetQuality.attachedFiles}</strong></div>}{detail.packetQuality.attachedFiles > 0 && <div><span>Attached size</span><strong>{formatBytes(detail.packetQuality.attachedBytes)}</strong></div>}</div>}
               {detail.packetQuality && detail.packetQuality.issues.length > 0 && <ul className="quality-issues">{detail.packetQuality.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
               <details className="disclosure" open><summary>Read the packet</summary><pre className="code-block packet-block">{detail.preview || "Packet unavailable."}</pre>{detail.packetTruncated && <p className="notice">Packet preview limited to 200 KB.</p>}</details>
               <details className="disclosure"><summary>Technical details</summary><div className="detail-rows"><div><span>Review</span><code>{detail.job.id}</code></div><div><span>Packet hash</span><code>{detail.job.packetHash.slice(0, 24)}</code></div><div><span>Configuration</span><code>{runConfig ? `${runConfig.settings.model} / ${runConfig.settings.reasoning} / ${activeProtocol?.version || runConfig.settings.protocolId}` : "Loading"}</code></div><div><span>Expires</span><code>{new Date(detail.job.expiresAt).toLocaleString()}</code></div></div></details>
