@@ -4,6 +4,9 @@
 
 ### Fixed
 
+* Searches are no longer blocked by this project's own deny hook. Codex names its web tool `webrun`; the hook's allowlist knew `web_search`, `web_search_preview`, `browser_search`, and `search`, so it refused every search for the entire life of the feature — the production log reads `Tool call blocked by PreToolUse hook: Only web search is available in this review.. Tool: webrun`. The hook and the worker now decide by what a tool does: a researched run may use one that reads the web, and anything able to act is refused in both modes, whatever it is called
+* `docs/SECURITY.md` claimed `PreToolUse` never sees web search. The same log disproves it. Corrected, along with the note that hook coverage varies by Codex version and the worker remains the control that makes a review hermetic
+
 * Research searches return results. The mode was `live`, which fetches pages from the open web — something a read-only sandbox with no outbound egress cannot do, so every search came back empty and the reviewer reported that it found no usable source. A real transcript showed exactly that: the reviewer announcing it would check external premises, working for two minutes, and concluding "the web-search attempt returned no usable source". The default is now `cached`, served from an OpenAI maintained index over the connection the model already holds. `SOL_RESEARCH_MODE` accepts `indexed` or `live` where the sandbox has real egress
 * The research trace no longer says the reviewer chose not to search. The same transcript carried no search item at all despite a search having been attempted, so a search that returns nothing need not be reported as an event. Zero observed searches is now stated as what it is — nothing recorded — and points at the review's own account
 

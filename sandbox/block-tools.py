@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import sys
 
 # Denies the tools Codex actually routes through PreToolUse: shell, unified_exec, apply_patch, and
@@ -13,7 +14,19 @@ import sys
 # route it here. It is not what permits research today; the search tool is enabled per run by the
 # worker passing features.web_search_request, and the marker records which mode this sandbox is in.
 RESEARCH_MARKER = "/opt/solgate/research-enabled"
-SEARCH_TOOLS = {"web_search", "web_search_preview", "browser_search", "search"}
+
+# Codex names its web tool `webrun`, not `web_search`. An allowlist of guessed names denied every
+# search this gate was built to permit, silently, for the entire life of the feature. So the rule is
+# now shaped the other way round: in a researched run, permit a tool that reads the web and refuse
+# anything that could act. A name nobody anticipated is refused unless it clearly belongs to the
+# reading family, and the worker's event-stream guard still terminates the run on anything it did
+# not expect, so this is a first line rather than the only one.
+READS_THE_WEB = re.compile(r"web|search|browse|fetch|http|url", re.I)
+CAN_ACT = re.compile(
+    r"shell|exec|command|apply|patch|write|edit|create|delete|remove|move|copy|"
+    r"mcp|bash|python|node|process|kill|spawn|file|dir|path",
+    re.I,
+)
 
 payload = json.load(sys.stdin)
 name = ""
@@ -23,13 +36,22 @@ for key in ("tool_name", "toolName", "name"):
         name = value.lower()
         break
 
-allowed = os.path.exists(RESEARCH_MARKER) and any(tool in name for tool in SEARCH_TOOLS)
+researching = os.path.exists(RESEARCH_MARKER)
+allowed = researching and bool(READS_THE_WEB.search(name)) and not CAN_ACT.search(name)
+
+if allowed:
+    reason = "Web search is available for this review."
+elif researching:
+    # Name the tool. The block that finally explained this feature was readable only because Codex
+    # logged the tool name itself; the gate should not depend on that.
+    reason = f"This review permits web search only. Refused: {name or 'an unnamed tool'}."
+else:
+    reason = f"No tools are available in this review process. Refused: {name or 'an unnamed tool'}."
+
 json.dump({
     "hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "allow" if allowed else "deny",
-        "permissionDecisionReason": "Web search is available for this review." if allowed
-        else ("Only web search is available in this review." if os.path.exists(RESEARCH_MARKER)
-              else "No tools are available in this review process."),
+        "permissionDecisionReason": reason,
     }
 }, sys.stdout)

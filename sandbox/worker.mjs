@@ -114,9 +114,12 @@ child.stdout.on("data", async (chunk) => {
       // not reliably documented -- a search has been seen as both `web_search` and `web_search_call`
       // -- and an anchored list would terminate the very run it is supposed to permit.
       const benignItem = /^(agent_message|reasoning|agent_reasoning|todo_list|plan|error|token_count|usage)/i.test(itemType);
-      // A live search issues queries and reads the pages they return. Both are the same channel,
-      // disclosed at approval and counted in the trace.
-      const searching = research && /web_search|web_fetch|browser_search/i.test(itemType);
+      // Matched the same way the deny hook matches, and for the same reason: the tool is called
+      // `webrun`, not `web_search`, and a list of guessed names blocked every search for the life
+      // of the feature. Reading the web is permitted; anything that could act is not, whatever it
+      // is called. Kept deliberately in step with sandbox/block-tools.py.
+      const searching = research && /web|search|browse|fetch|http|url/i.test(itemType)
+        && !/shell|exec|command|apply|patch|write|edit|create|delete|remove|move|copy|mcp|bash|python|node|process|kill|spawn|file|dir|path/i.test(itemType);
       const structural = !itemType && /^(thread\.|turn\.|item\.|error|session)/i.test(eventType);
       if (!benignItem && !searching && !structural) {
         toolAttempt = true;
