@@ -40,11 +40,12 @@ function Copy-SourceFile([string]$RelativePath, [string]$Destination) {
 
 Write-Host ""
 Write-Host "Sol Review Gate $ReleaseVersion" -ForegroundColor Cyan
-Write-Host "Claude Code client and personal /sol skill"
+Write-Host "Claude Code client and personal /sol and /solute skills"
 Write-Host ""
 Write-Host "This installer writes only to your user profile:"
 Write-Host "  $InstallRoot"
 Write-Host "  $(Join-Path $ClaudeSkillsRoot 'sol')"
+Write-Host "  $(Join-Path $ClaudeSkillsRoot 'solute')"
 
 if (-not $RepositoryRoot) {
   $RepositoryRoot = "https://raw.githubusercontent.com/cabibbz/SolReviewGate/v$ReleaseVersion"
@@ -86,7 +87,7 @@ $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
   Write-Host "Node.js and Claude Code are available." -ForegroundColor Green
 } else {
-  Write-Warning "Claude Code was not found on PATH. The skill will still be installed, but /sol becomes available after Claude Code is installed and restarted."
+  Write-Warning "Claude Code was not found on PATH. The skills will still be installed, but /sol and /solute become available after Claude Code is installed and restarted."
 }
 
 Write-Step 2 "Verifying the private PWA client"
@@ -105,26 +106,33 @@ if (-not $SkipVerify) {
 $ClientRoot = Join-Path $InstallRoot "client"
 $BinRoot = Join-Path $InstallRoot "bin"
 $SkillRoot = Join-Path $ClaudeSkillsRoot "sol"
+$ParallelSkillRoot = Join-Path $ClaudeSkillsRoot "solute"
 $ClaudeRoot = Split-Path -Parent $ClaudeSkillsRoot
 $staging = Join-Path ([IO.Path]::GetTempPath()) "solreviewinstaller$([Guid]::NewGuid().ToString('N'))"
 $migrated = $false
 
-Write-Step 3 "Installing the client and personal skill"
+Write-Step 3 "Installing the client and personal skills"
 try {
-  New-Item -ItemType Directory -Force -Path $staging, $ClientRoot, $BinRoot, $SkillRoot | Out-Null
+  New-Item -ItemType Directory -Force -Path $staging, $ClientRoot, $BinRoot, $SkillRoot, $ParallelSkillRoot | Out-Null
   $stagedClient = Join-Path $staging "solreview.js"
-  $stagedSkill = Join-Path $staging "SKILL.md"
+  $stagedSkill = Join-Path $staging "sol.md"
+  $stagedParallelSkill = Join-Path $staging "solute.md"
   Copy-SourceFile "plugins\solreview\bin\solreview.js" $stagedClient
   Copy-SourceFile "plugins\solreview\skills\sol\SKILL.md" $stagedSkill
+  Copy-SourceFile "plugins\solreview\skills\solute\SKILL.md" $stagedParallelSkill
 
   & node --check $stagedClient
   if ($LASTEXITCODE -ne 0) { throw "The downloaded client did not pass validation." }
-  if ((Get-Content -LiteralPath $stagedSkill -Raw) -notmatch "name:\s*sol") {
-    throw "The downloaded Claude Code skill did not pass validation."
+  if ((Get-Content -LiteralPath $stagedSkill -Raw) -notmatch "(?m)^name:\s*sol\s*$") {
+    throw "The downloaded /sol skill did not pass validation."
+  }
+  if ((Get-Content -LiteralPath $stagedParallelSkill -Raw) -notmatch "(?m)^name:\s*solute\s*$") {
+    throw "The downloaded /solute skill did not pass validation."
   }
 
   Copy-Item -LiteralPath $stagedClient -Destination (Join-Path $ClientRoot "solreview.js") -Force
   Copy-Item -LiteralPath $stagedSkill -Destination (Join-Path $SkillRoot "SKILL.md") -Force
+  Copy-Item -LiteralPath $stagedParallelSkill -Destination (Join-Path $ParallelSkillRoot "SKILL.md") -Force
 
   $config = @{ url = $Url; token = $ClientToken } | ConvertTo-Json
   Set-Content -LiteralPath (Join-Path $InstallRoot "remote.json") -Value $config -Encoding UTF8
@@ -179,6 +187,6 @@ Write-Host "Installation complete." -ForegroundColor Green
 if ($migrated) {
   Write-Host "A previous Sol Review command was migrated to the personal skill." -ForegroundColor Green
 }
-Write-Host "Restart Claude Code, then run /sol in any existing or new session."
+Write-Host "Restart Claude Code, then run /sol or /solute in any existing or new session."
 Write-Host "The client credential is stored outside the project at $InstallRoot."
 Write-Host "No packet or configuration file was added to a Claude project."

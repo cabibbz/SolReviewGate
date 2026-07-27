@@ -7,13 +7,16 @@ param(
 $ErrorActionPreference = "Stop"
 $clientRoot = [IO.Path]::GetFullPath($InstallRoot)
 $skillRoot = [IO.Path]::GetFullPath((Join-Path $ClaudeSkillsRoot "sol"))
+$parallelSkillRoot = [IO.Path]::GetFullPath((Join-Path $ClaudeSkillsRoot "solute"))
 $homeRoot = [IO.Path]::GetFullPath($HOME).TrimEnd("\") + "\"
 
 if (-not $clientRoot.StartsWith($homeRoot, [StringComparison]::OrdinalIgnoreCase)) {
   throw "The client path must stay inside the current user profile."
 }
-if (-not $skillRoot.StartsWith($homeRoot, [StringComparison]::OrdinalIgnoreCase)) {
-  throw "The skill path must stay inside the current user profile."
+foreach ($candidate in @($skillRoot, $parallelSkillRoot)) {
+  if (-not $candidate.StartsWith($homeRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "The skill path must stay inside the current user profile."
+  }
 }
 
 Write-Host ""
@@ -27,6 +30,11 @@ if ($PSCmdlet.ShouldProcess($clientRoot, "Remove the Sol Review client and crede
 if ($PSCmdlet.ShouldProcess($skillRoot, "Remove the personal /sol skill")) {
   if (Test-Path -LiteralPath $skillRoot) {
     Remove-Item -LiteralPath $skillRoot -Recurse -Force
+  }
+}
+if ($PSCmdlet.ShouldProcess($parallelSkillRoot, "Remove the personal /solute skill")) {
+  if (Test-Path -LiteralPath $parallelSkillRoot) {
+    Remove-Item -LiteralPath $parallelSkillRoot -Recurse -Force
   }
 }
 

@@ -27,19 +27,27 @@ try {
     -SkipPath
 
   $installedClient = Join-Path $installRoot "client\solreview.js"
-  $installedSkill = Join-Path $skillsRoot "sol\SKILL.md"
   if (-not (Test-Path -LiteralPath $installedClient)) { throw "Packaged client was not installed." }
-  if (-not (Test-Path -LiteralPath $installedSkill)) { throw "Packaged skill was not installed." }
   if ((Get-FileHash -LiteralPath $installedClient).Hash -ne (Get-FileHash -LiteralPath (Join-Path $extractRoot "payload\plugins\solreview\bin\solreview.js")).Hash) {
     throw "Installed client does not match the release payload."
   }
-  if ((Get-FileHash -LiteralPath $installedSkill).Hash -ne (Get-FileHash -LiteralPath (Join-Path $extractRoot "payload\plugins\solreview\skills\sol\SKILL.md")).Hash) {
-    throw "Installed skill does not match the release payload."
+
+  $installedSkills = @()
+  foreach ($skill in @("sol", "solute")) {
+    $installed = Join-Path $skillsRoot "$skill\SKILL.md"
+    $packaged = Join-Path $extractRoot "payload\plugins\solreview\skills\$skill\SKILL.md"
+    if (-not (Test-Path -LiteralPath $installed)) { throw "Packaged $skill skill was not installed." }
+    if ((Get-FileHash -LiteralPath $installed).Hash -ne (Get-FileHash -LiteralPath $packaged).Hash) {
+      throw "Installed $skill skill does not match the release payload."
+    }
+    $installedSkills += $installed
   }
 
   & (Join-Path $extractRoot "SolReviewRemove.ps1") -InstallRoot $installRoot -ClaudeSkillsRoot $skillsRoot -Confirm:$false
   if (Test-Path -LiteralPath $installRoot) { throw "The packaged remover left the client installed." }
-  if (Test-Path -LiteralPath $installedSkill) { throw "The packaged remover left the skill installed." }
+  foreach ($installed in $installedSkills) {
+    if (Test-Path -LiteralPath $installed) { throw "The packaged remover left $installed installed." }
+  }
 } finally {
   $resolvedHome = [IO.Path]::GetFullPath($HOME).TrimEnd("\") + "\"
   $resolvedTest = [IO.Path]::GetFullPath($testRoot)

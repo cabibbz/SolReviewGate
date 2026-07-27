@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+* Both installers install the `/solute` skill. It shipped as a documented command that no installer ever wrote to disk, so `/solute` did not exist after installing. The Windows uninstaller removes it, the release packager verifies it is present in both archives, and a test asserts every skill directory in the repository is installed, packaged, and removed
+* The POSIX installer stages the client and both skills in a temporary directory, validates them there, and copies them into place only after every check passes, so a bad download no longer replaces a working installation
+* The POSIX installer has test coverage: a successful install against a local server and a rejected install when a skill does not carry its expected name
+
 ### Added
 
 * `Let the reviewer research` allows web search inside the isolated sandbox, per configuration and per comparison slot, so the reviewer can establish an external fact and cite it. Shell, file writes, MCP, and patches stay blocked, the deny hook permits only a search tool and only when the run wrote a research marker, and the worker still terminates the run on any other tool event
