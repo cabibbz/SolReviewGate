@@ -480,6 +480,8 @@ function gateEvent(internalCode: string, opaque: boolean): Pick<ReviewEvent, "ti
     START_FAILED: { title: "Review failed to start", message: "The isolated Codex review could not be started." },
     POLL_FAILED: { title: "Review became unavailable", message: "The running review could not be recovered or completed." },
     AUTH_UNAVAILABLE: { title: "Codex authentication unavailable", message: "The authenticated Codex snapshot was unavailable." },
+    MODEL_UNAVAILABLE: { title: "Model unavailable", message: "Codex could not resolve the configured model id for this account." },
+    SANDBOX_CONFIG_REJECTED: { title: "Sandbox configuration rejected", message: "Codex refused the run configuration before the model was called. This is a deployment fault, not a model or gate outcome." },
     OPERATOR_WITHHELD: { title: "Operator released no candidate", message: "Every candidate stayed on this phone. The client received the fixed terminal response." },
     RELEASED_COMBINED: { title: "Combined review released", message: "Every candidate that passed the release checks was merged into one review, with each reviewer attributed." },
   };

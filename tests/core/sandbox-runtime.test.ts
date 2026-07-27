@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { normalizeCodexEvents, sandboxStatus } from "../../lib/sandbox-runtime";
+import { classifyWorkerFailure, normalizeCodexEvents, sandboxStatus } from "../../lib/sandbox-runtime";
 import { getStore, resetMemoryStoreForTests } from "../../lib/store";
 
 test.beforeEach(() => resetMemoryStoreForTests());
+
+// The variants Codex accepts for web_search. Anything else is a hard config load failure.
+const codexWebSearchVariants = ["disabled", "cached", "indexed", "live"];
 
 test("expired Codex snapshots require reconnection before review", async () => {
   const store = getStore();
@@ -64,4 +68,33 @@ test("retains the phone-only explanation from a withheld response", () => {
     },
   }));
   assert.equal(events[0].message, "A material portion had to be declined.");
+});
+
+test("the worker only ever asks Codex for a documented web_search variant", async () => {
+  // "enabled" is not a variant. --strict-config turned it into an immediate config load failure,
+  // so every researched run died in about a second without reaching the model.
+  const worker = await readFile(new URL("../../sandbox/worker.mjs", import.meta.url), "utf8");
+  const assignments = [...worker.matchAll(/web_search="?\$\{[^}]*\}"?|web_search="([a-z]+)"/g)];
+  assert.ok(assignments.length > 0, "the worker no longer sets web_search");
+
+  const values = [...worker.matchAll(/research \? "([a-z]+)" : "([a-z]+)"/g)].flatMap((match) => [match[1], match[2]]);
+  assert.deepEqual(values, ["live", "disabled"]);
+  for (const value of values) {
+    assert.ok(codexWebSearchVariants.includes(value), `web_search="${value}" is not a Codex variant`);
+  }
+
+  const runtimeConfig = await readFile(new URL("../../sandbox/config.toml", import.meta.url), "utf8");
+  const declared = /web_search\s*=\s*"([a-z]+)"/.exec(runtimeConfig);
+  assert.ok(declared && codexWebSearchVariants.includes(declared[1]), "config.toml declares an unknown web_search variant");
+  assert.equal(declared?.[1], "disabled", "the resting configuration must not reach the web");
+});
+
+test("a rejected sandbox configuration is not reported as a model or gate outcome", () => {
+  const codeFor = classifyWorkerFailure;
+
+  assert.equal(codeFor('Error loading config.toml: unknown variant `enabled`, expected one of `disabled`, `cached`, `indexed`, `live` in `web_search`'), "SANDBOX_CONFIG_REJECTED");
+  assert.equal(codeFor("unknown field `web_serch`"), "SANDBOX_CONFIG_REJECTED");
+  assert.equal(codeFor("invalid type: string, expected a boolean"), "SANDBOX_CONFIG_REJECTED");
+  assert.equal(codeFor("Model metadata for `gpt-5.6-nope` not found"), "MODEL_UNAVAILABLE");
+  assert.equal(codeFor("the run attempted a tool"), "WORKER_REJECTED");
 });
