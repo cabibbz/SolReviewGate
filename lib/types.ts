@@ -40,6 +40,10 @@ export interface ReviewCandidate {
   protocolVersion: string;
   /** The reviewer was allowed to search the web for this run. */
   research?: boolean;
+  /** Searches observed in the transport stream, not the model's account of what it did. */
+  searchCount?: number;
+  /** The queries that left the sandbox. Phone only. */
+  searchLog?: string[];
   codexVersion?: string;
   policyHash?: string;
   schemaHash?: string;
@@ -77,6 +81,10 @@ export interface ReviewJob {
   reasoning?: string;
   codexVersion?: string;
   protocolVersion?: string;
+  /** Copied from the released candidate so the answered job shows what actually happened. */
+  research?: boolean;
+  searchCount?: number;
+  searchLog?: string[];
   policyHash?: string;
   schemaHash?: string;
   workerHash?: string;
@@ -94,6 +102,7 @@ export interface RunSummary {
   reasoning: string;
   protocolVersion: string;
   research?: boolean;
+  searchCount?: number;
   internalCode: string;
   releasable: boolean;
   postRelease: boolean;

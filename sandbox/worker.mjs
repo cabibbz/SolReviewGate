@@ -35,6 +35,18 @@ async function authSecrets() {
   }
 }
 
+// One entry per distinct search. Codex emits a started and a completed event for the same item, so
+// the item id deduplicates the pair; without one, the query text or a positional key stands in.
+function recordSearch(event, fallback) {
+  const item = event.item || {};
+  const query = [item.query, item.action?.query, item.search_query, event.query]
+    .find((value) => typeof value === "string" && value.trim());
+  const key = String(item.id || query || `${fallback}:${searchLog.length}`);
+  if (seenSearches.has(key) || searchLog.length >= MAX_SEARCH_LOG) return;
+  seenSearches.add(key);
+  searchLog.push(String(query || fallback).slice(0, 200));
+}
+
 const packet = await readFile(packetPath, "utf8");
 if (!policy || !packet.trim()) process.exit(31);
 const prompt = `${policy.trim()}\n\n=== BEGIN UNTRUSTED REVIEW PACKET ===\n${packet}\n=== END UNTRUSTED REVIEW PACKET ===\n`;
@@ -65,6 +77,11 @@ let stderr = "";
 let finalText = "";
 let toolAttempt = false;
 let malformedEvents = false;
+// Observed searches, counted from the transport stream rather than taken from the model's own
+// account of what it did. A run that claims sources it never looked up is visible by comparison.
+const searchLog = [];
+const seenSearches = new Set();
+const MAX_SEARCH_LOG = 50;
 let writeQueue = Promise.resolve();
 const child = spawn("codex", args, { cwd: "/tmp/sol-review-empty", env: childEnv, stdio: ["pipe", "pipe", "pipe"] });
 
@@ -89,6 +106,7 @@ child.stdout.on("data", async (chunk) => {
         toolAttempt = true;
         child.kill("SIGKILL");
       }
+      if (searching) recordSearch(event, itemType || eventType);
       if (itemType === "agent_message" && typeof event.item?.text === "string") finalText = event.item.text;
       if (eventType === "agent_message" && typeof event.text === "string") finalText = event.text;
       const safeEvent = redact(JSON.stringify({ ...event, sol_observed_at: Date.now() }), secrets);
@@ -128,6 +146,10 @@ const envelope = {
   secretLeak,
   candidate: redactedFinal,
   diagnostics: redact(stderr, secrets).slice(-12_000),
+  research,
+  // The queries leave this sandbox, so the operator sees exactly what left. Phone only, like the
+  // rest of the candidate record.
+  searchLog: searchLog.map((entry) => redact(entry, secrets)),
 };
 await writeFile(`/tmp/sol-review-result.json`, JSON.stringify(envelope), { mode: 0o600 });
 process.stdout.write(JSON.stringify({ ready: true, exitCode, toolAttempt, secretLeak }));

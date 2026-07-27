@@ -2,7 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+* A research trace on every run that was allowed to search: how many searches actually left the sandbox and the query text of each, counted from the Codex event stream rather than taken from the review's own account. Shown on the review, on each candidate, and in the fact table
+* A review that names external sources with no observed search behind it is called out as such, rather than presented as though the citations were retrieved
+* `EXTERNAL SOURCES` renders on the phone, next to the packet evidence the review cites
+
 ### Fixed
+
+* Turning research on and pressing `Apply` saves it. The dirty check that enables `Apply` never looked at the research field, so the switch could be flipped and the change silently discarded — indistinguishable from a setting that does not work
+* A failed service worker registration no longer throws an unhandled error into the page
 
 * Research runs reach the web. The worker asked Codex for `web_search="enabled"`, which is not one of the accepted variants, so `--strict-config` failed the run at configuration load in about a second and no researched review ever ran. The value is now `live`, and a test asserts both branches stay inside the documented set
 * A run Codex refuses to configure is recorded as `SANDBOX_CONFIG_REJECTED` rather than `Worker rejected`, so a deployment fault no longer reads like a model or isolation outcome. `MODEL_UNAVAILABLE` and the new code both count as system failures in the lab instead of falling into unclassified

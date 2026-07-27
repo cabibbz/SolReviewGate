@@ -284,6 +284,17 @@ button { cursor: pointer; }
 .result-recommendations ol { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
 .result-recommendations li { padding-left: 3px; overflow-wrap: anywhere; color: #34403b; font-size: 13px; line-height: 1.55; }
 .private-codex-response { margin-top: 18px; }
+
+.research-trace { margin-top: 18px; padding: 12px; border: 1px solid var(--line); border-left-width: 3px; border-radius: 5px; background: var(--surface); }
+.research-trace .content-heading { margin-bottom: 8px; }
+.research-trace .section-copy { margin: 0; }
+.research-trace h3 { margin: 12px 0 7px; font-size: 12px; }
+.research-trace ol { display: grid; gap: 7px; margin: 0; padding-left: 20px; }
+.research-trace li { padding-left: 3px; overflow-wrap: anywhere; color: #34403b; font-size: 13px; line-height: 1.55; }
+.research-ran { border-left-color: var(--green); }
+.research-none, .research-unrecorded { border-left-color: var(--line); }
+/* Sources named without a search behind them. The one case that needs to interrupt reading. */
+.research-mismatch { border-left-color: var(--coral); background: var(--coral-soft); }
 .phone-only-label { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border-bottom: 1px solid #ddca93; color: #554214; background: var(--amber-soft); font-size: 11px; font-weight: 750; }
 .raw-intro { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: #f7f8f7; font-size: 11px; }
 

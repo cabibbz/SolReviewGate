@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { researchStatus, type ResearchTrace as ResearchTraceRecord } from "@/lib/research";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -60,6 +61,9 @@ interface Job {
   schemaHash?: string;
   workerHash?: string;
   candidateCount?: number;
+  research?: boolean;
+  searchCount?: number;
+  searchLog?: string[];
   selectedCandidateId?: string;
   runs?: RunSummary[];
 }
@@ -69,6 +73,8 @@ interface RunSummary {
   model: string;
   reasoning: string;
   protocolVersion: string;
+  research?: boolean;
+  searchCount?: number;
   internalCode: string;
   releasable: boolean;
   postRelease: boolean;
@@ -86,6 +92,9 @@ interface Candidate {
   startedAt?: number;
   completedAt?: number;
   policyHash?: string;
+  research?: boolean;
+  searchCount?: number;
+  searchLog?: string[];
   internalCode?: string;
   releasable?: boolean;
   postRelease?: boolean;
@@ -360,6 +369,7 @@ interface ReadableResult {
   released: boolean;
   confidence?: string;
   evidence?: string[];
+  externalSources?: string[];
   counterargument?: string;
 }
 
@@ -377,15 +387,18 @@ function parseResult(value: string | null): ReadableResult | null {
   const verdict = resultSection(value, "VERDICT", ["CONFIDENCE", "ASSESSMENT", "EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
   const assessment = resultSection(value, "ASSESSMENT", ["EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
   if (!verdict || !assessment) return { verdict: "Review", assessment: readableValue(value), recommendations: [], released: true };
-  const evidence = resultSection(value, "EVIDENCE CITED", ["COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const evidence = resultSection(value, "EVIDENCE CITED", ["EXTERNAL SOURCES", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const external = resultSection(value, "EXTERNAL SOURCES", ["COUNTERARGUMENT", "RECOMMENDATIONS"]);
   const recommendations = resultSection(value, "RECOMMENDATIONS", []);
+  const bullets = (text: string) => text.split("\n").map((item) => item.replace(/^\s*-\s*/, "").trim()).filter((item) => item && item !== "None");
   return {
     verdict: verdict.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
     confidence: resultSection(value, "CONFIDENCE", ["ASSESSMENT", "EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]),
     assessment,
-    evidence: evidence.split("\n").map((item) => item.replace(/^\s*-\s*/, "").trim()).filter((item) => item && item !== "None"),
+    evidence: bullets(evidence),
+    externalSources: bullets(external),
     counterargument: resultSection(value, "COUNTERARGUMENT", ["RECOMMENDATIONS"]),
-    recommendations: recommendations.split("\n").map((item) => item.replace(/^\s*-\s*/, "").trim()).filter((item) => item && item !== "None"),
+    recommendations: bullets(recommendations),
     released: true,
   };
 }
@@ -401,6 +414,7 @@ function parseCodexResponse(value: string | null): ReadableResult | null {
         confidence: readableValue(parsed.confidence),
         assessment: readableValue(parsed.assessment) || "Codex returned a review without an assessment.",
         evidence: Array.isArray(parsed.evidenceCited) ? parsed.evidenceCited.map((item) => readableValue(item)).filter(Boolean) : [],
+        externalSources: Array.isArray(parsed.externalSources) ? parsed.externalSources.map((item) => readableValue(item)).filter(Boolean) : [],
         counterargument: readableValue(parsed.counterargument),
         recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.map((item) => readableValue(item)).filter(Boolean) : [],
         released: false,
@@ -496,12 +510,23 @@ function comparison(rows: Candidate[]): { rows: ComparisonRow[]; agreement: stri
   return { rows: parsed, agreement, evidence };
 }
 
+function ResearchTrace({ source, result }: { source?: ResearchTraceRecord | null; result?: ReadableResult | null }) {
+  const status = researchStatus(source, result?.externalSources?.length || 0);
+  if (status.level === "off") return null;
+  return <section className={`research-trace research-${status.level}`}>
+    <div className="content-heading secondary"><span>Research</span><code>{status.label}</code></div>
+    <p className="section-copy">{status.detail}</p>
+    {status.queries.length > 0 && <><h3>Queries that left the sandbox</h3><ol>{status.queries.map((query, index) => <li key={`${index}:${query}`}>{query}</li>)}</ol></>}
+  </section>;
+}
+
 function ResultCard({ result, phoneOnly = false }: { result: ReadableResult; phoneOnly?: boolean }) {
   return <article className={`readable-result ${result.released ? "released" : "not-released"}`}>
     {phoneOnly && <div className="phone-only-label"><LockKeyhole size={14} /><span>Phone only. This is never sent to Claude.</span></div>}
     <div className="result-verdict"><div><span>Verdict</span><strong>{result.verdict}</strong></div>{result.confidence && <div><span>Confidence</span><strong>{result.confidence}</strong></div>}</div>
     <div className="result-assessment"><h3>{phoneOnly ? "What Codex said" : "Assessment"}</h3><p>{result.assessment}</p></div>
     {result.evidence && result.evidence.length > 0 && <div className="result-evidence"><h3>Evidence cited</h3><div>{result.evidence.map((item) => <code key={item}>{item}</code>)}</div></div>}
+    {result.externalSources && result.externalSources.length > 0 && <div className="result-recommendations"><h3>External sources</h3><ol>{result.externalSources.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ol></div>}
     {result.counterargument && <div className="result-counterargument"><h3>Strongest counterargument</h3><p>{result.counterargument}</p></div>}
     {result.recommendations.length > 0 && <div className="result-recommendations"><h3>Recommendations</h3><ol>{result.recommendations.map((recommendation, index) => <li key={`${index}:${recommendation}`}>{recommendation}</li>)}</ol></div>}
   </article>;
@@ -659,7 +684,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
     window.addEventListener("online", setConnected);
     window.addEventListener("offline", setDisconnected);
     void loadHealth();
-    if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((registration) => registration.update());
+    if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((registration) => registration?.update()).catch(() => undefined);
     return () => {
       window.removeEventListener("online", setConnected);
       window.removeEventListener("offline", setDisconnected);
@@ -985,7 +1010,15 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   };
   const activeProtocol = runConfig?.protocols.find((protocol) => protocol.id === runConfig.settings.protocolId) || null;
   const draftProtocol = configDraft ? runConfig?.protocols.find((protocol) => protocol.id === configDraft.protocolId) || null : null;
-  const configDirty = Boolean(runConfig && configDraft && (configDraft.model !== runConfig.settings.model || configDraft.reasoning !== runConfig.settings.reasoning || configDraft.protocolId !== runConfig.settings.protocolId || JSON.stringify(configDraft.panel) !== JSON.stringify(runConfig.settings.panel)));
+  // Every field the draft can change has to appear here. A field left out leaves Apply disabled and
+  // the change silently unsaved, which is indistinguishable from a setting that does not work.
+  const configDirty = Boolean(runConfig && configDraft && (
+    configDraft.model !== runConfig.settings.model
+    || configDraft.reasoning !== runConfig.settings.reasoning
+    || configDraft.protocolId !== runConfig.settings.protocolId
+    || Boolean(configDraft.research) !== Boolean(runConfig.settings.research)
+    || JSON.stringify(configDraft.panel) !== JSON.stringify(runConfig.settings.panel)
+  ));
   const windowsInstaller = `$env:SOL_GATE_URL='${serviceOrigin}'; irm 'https://github.com/cabibbz/SolReviewGate/releases/latest/download/SolReviewSetup.ps1' | iex`;
 
   if (!health) return <main className="empty"><LoaderCircle className="spin" aria-label="Loading" /></main>;
@@ -1109,16 +1142,16 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
             <div className="review-facts">{comparing && !detail.job.selectedCandidateId
               ? <><div><span>Candidates</span><strong>{candidates.length}</strong></div><div><span>Configurations</span><strong>{new Set(candidates.map((candidate) => `${candidate.model}/${candidate.protocolVersion}`)).size}</strong></div></>
               : <><div><span>Model</span><strong>{detail.job.model || "Pending"}</strong></div><div><span>Reasoning</span><strong>{detail.job.reasoning || "Pending"}</strong></div></>}
-              <div><span>Duration</span><strong>{formatDuration(detail.job.startedAt, detail.job.completedAt)}</strong></div><div><span>Tokens</span><strong>{(usage.input + usage.output).toLocaleString()}</strong></div><div><span>Outcome</span><strong>{awaitingSelection ? "Awaiting your choice" : outcomeLabel(detail.job.internalCode)}</strong></div><div><span>Protocol</span><strong>{comparing && !detail.job.selectedCandidateId ? "Per candidate" : detail.job.protocolVersion || "Legacy"}</strong></div><div><span>Expires</span><strong>{new Date(detail.job.expiresAt).toLocaleDateString([], { month: "short", day: "numeric" })}</strong></div></div>
+              <div><span>Duration</span><strong>{formatDuration(detail.job.startedAt, detail.job.completedAt)}</strong></div><div><span>Tokens</span><strong>{(usage.input + usage.output).toLocaleString()}</strong></div><div><span>Outcome</span><strong>{awaitingSelection ? "Awaiting your choice" : outcomeLabel(detail.job.internalCode)}</strong></div><div><span>Protocol</span><strong>{comparing && !detail.job.selectedCandidateId ? "Per candidate" : detail.job.protocolVersion || "Legacy"}</strong></div>{detail.job.research && <div><span>Research</span><strong>{researchStatus(detail.job, readableResult?.externalSources?.length || 0).label}</strong></div>}<div><span>Expires</span><strong>{new Date(detail.job.expiresAt).toLocaleDateString([], { month: "short", day: "numeric" })}</strong></div></div>
             {detail.job.state === "AWAITING_APPROVAL" && <div className="approval-bar">{detail.packetQuality && <span className="approval-quality">Packet {detail.packetQuality.score}/100</span>}<button className="btn primary" onClick={() => void decision("approve")} disabled={Boolean(busy)}><Check size={16} /> Approve packet</button>{Boolean(runConfig?.settings.panel.length) && <button className="btn" onClick={() => void decision("approve_panel")} disabled={Boolean(busy)}><Layers size={16} /> Approve with {runConfig?.settings.panel.length} candidates</button>}<button className="btn danger" onClick={() => void decision("reject")} disabled={Boolean(busy)}><X size={16} /> Reject</button></div>}
             {comparing && <div className="candidate-strip" ref={candidateStripRef} role="tablist" aria-label="Candidate responses">{candidates.map((candidate) => <button key={candidate.id} role="tab" aria-selected={candidate.id === viewCandidateId} className={`candidate-chip ${candidate.id === viewCandidateId ? "active" : ""} ${candidate.id === detail.job.selectedCandidateId ? "released" : ""}`} onClick={() => { setViewCandidateId(candidate.id); setCandidateDetail(null); }}><strong>{candidate.model}</strong><span>{candidate.protocolVersion} / {candidate.reasoning}</span><em>{candidate.state === "COMPLETE" ? outcomeLabel(candidate.internalCode) : candidate.state === "RUNNING" ? "Running" : "Queued"}{candidate.postRelease ? " / after release" : ""}</em></button>)}</div>}
             {awaitingSelection && <div className="selection-bar"><div className="selection-copy"><strong>Nothing has reached Claude yet.</strong><span>Release the candidate you are reading, release every usable one merged into a single review, or release nothing. This decision is final for the packet.</span></div><div className="toolbar">{viewedCandidate && <button className={`btn ${releaseConfirm === viewedCandidate.id ? "primary" : ""}`} disabled={!viewedCandidate.releasable || viewedCandidate.postRelease || Boolean(busy)} onClick={() => void releaseSelection(viewedCandidate.id)}><Send size={16} /> {releaseConfirm === viewedCandidate.id ? `Confirm release of ${viewedCandidate.model}` : `Release ${viewedCandidate.label}`}</button>}{releasableCandidates > 1 && <button className={`btn ${releaseConfirm === "combined" ? "primary" : ""}`} disabled={Boolean(busy)} onClick={() => void releaseSelection(null, true)}><Layers size={16} /> {releaseConfirm === "combined" ? `Confirm: release all ${releasableCandidates} combined` : `Release all ${releasableCandidates} combined`}</button>}<button className={`btn ${releaseConfirm === "none" ? "danger" : ""}`} disabled={Boolean(busy)} onClick={() => void releaseSelection(null)}><X size={16} /> {releaseConfirm === "none" ? "Confirm: release nothing" : "Release nothing"}</button></div></div>}
-            {viewingCandidate && viewedCandidate && <div className="candidate-facts"><div><span>Candidate</span><strong>{viewedCandidate.label}{viewedCandidate.id === detail.job.selectedCandidateId ? " / released" : ""}</strong></div><div><span>Model</span><strong>{viewedCandidate.model}</strong></div><div><span>Reasoning</span><strong>{viewedCandidate.reasoning}</strong></div><div><span>Protocol</span><strong>{viewedCandidate.protocolVersion}</strong></div><div><span>Duration</span><strong>{formatDuration(viewedCandidate.startedAt, viewedCandidate.completedAt)}</strong></div><div><span>Outcome</span><strong>{viewedCandidate.state === "COMPLETE" ? outcomeLabel(viewedCandidate.internalCode) : viewedCandidate.state === "RUNNING" ? "Running" : "Queued"}</strong></div></div>}
+            {viewingCandidate && viewedCandidate && <div className="candidate-facts"><div><span>Candidate</span><strong>{viewedCandidate.label}{viewedCandidate.id === detail.job.selectedCandidateId ? " / released" : ""}</strong></div><div><span>Model</span><strong>{viewedCandidate.model}</strong></div><div><span>Reasoning</span><strong>{viewedCandidate.reasoning}</strong></div><div><span>Protocol</span><strong>{viewedCandidate.protocolVersion}</strong></div><div><span>Duration</span><strong>{formatDuration(viewedCandidate.startedAt, viewedCandidate.completedAt)}</strong></div><div><span>Outcome</span><strong>{viewedCandidate.state === "COMPLETE" ? outcomeLabel(viewedCandidate.internalCode) : viewedCandidate.state === "RUNNING" ? "Running" : "Queued"}</strong></div><div><span>Research</span><strong>{researchStatus(viewedCandidate, readableResult?.externalSources?.length || 0).label}</strong></div></div>}
             <div className="detail-tabs" role="tablist"><button className={detailTab === "live" ? "active" : ""} onClick={() => setDetailTab("live")}><Activity size={15} /> Live</button><button className={detailTab === "packet" ? "active" : ""} onClick={() => setDetailTab("packet")}><FileText size={15} /> Packet</button><button className={detailTab === "result" ? "active" : ""} onClick={() => setDetailTab("result")}><ShieldCheck size={15} /> Result</button><button className={detailTab === "raw" ? "active" : ""} onClick={() => setDetailTab("raw")}><TerminalSquare size={15} /> Raw</button></div>
             <div className="panel-body detail-content">
               {detailTab === "live" && <><div className="transcript-heading"><div><strong>{viewingCandidate ? `${viewedCandidate?.label} transcript` : selectedActive ? "Codex is responding" : terminalStates.has(detail.job.state) ? "Response complete" : stateLabel(detail.job.state)}</strong><span>{lastEvent ? `Updated ${new Date(lastEvent.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "Waiting for text"}</span></div>{selectedActive && <LoaderCircle className="spin" size={16} />}</div>{shownEvents.length ? <div className="transcript">{shownEvents.map((event) => { const message = event.title === "Codex session started" ? "" : readableValue(event.message); return <section key={event.id} className={`transcript-entry source-${event.source}`}><div className="transcript-meta"><span>{sourceLabel(event.source)}</span><time>{new Date(event.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}</time></div>{message ? <div className="transcript-text">{message}</div> : <div className="transcript-status">{readableEventTitle(event.title)}</div>}{event.usage && <div className="transcript-usage">Input {event.usage.inputTokens?.toLocaleString() || 0} / Cached {event.usage.cachedInputTokens?.toLocaleString() || 0} / Output {event.usage.outputTokens?.toLocaleString() || 0} / Reasoning {event.usage.reasoningOutputTokens?.toLocaleString() || 0}</div>}</section>; })}</div> : <div className="empty compact"><div>{selectedActive ? <LoaderCircle className="spin" size={24} /> : <Clock3 size={24} />}<p>{selectedActive ? "Waiting for Codex to emit text." : "No transcript was retained for this older review."}</p></div></div>}</>}
               {detailTab === "packet" && <>{detail.packetQuality && <div className="packet-quality"><div><span>Quality</span><strong>{detail.packetQuality.score}/100</strong></div><div><span>Sections</span><strong>{detail.packetQuality.sectionsPresent}/{detail.packetQuality.sectionsRequired}</strong></div><div><span>Sources</span><strong>{detail.packetQuality.sourceIds}</strong></div><div><span>Citations</span><strong>{detail.packetQuality.sourceReferences}</strong></div></div>}{detail.packetQuality && detail.packetQuality.issues.length > 0 && <ul className="quality-issues">{detail.packetQuality.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}<div className="content-heading"><span>Submitted context</span><code>{detail.job.packetHash.slice(0, 12)}</code></div><pre className="code-block packet-block">{detail.preview || "Packet unavailable."}</pre>{detail.packetTruncated && <p className="notice">Packet preview limited to 200 KB.</p>}</>}
-              {detailTab === "result" && parallelJob ? <><div className="content-heading"><span>Independent answer</span><code>Phone only</code></div>{parallelAnswer ? <article className="readable-result not-released"><div className="phone-only-label"><LockKeyhole size={14} /><span>Phone only. This was never sent to Claude.</span></div><div className="result-verdict"><div><span>Confidence</span><strong>{parallelAnswer.confidence || "Unstated"}</strong></div></div><div className="result-assessment"><h3>Answer</h3><p>{parallelAnswer.answer}</p></div>{parallelAnswer.approach && <div className="result-counterargument"><h3>Approach</h3><p>{parallelAnswer.approach}</p></div>}{parallelAnswer.assumptions.length > 0 && <div className="result-recommendations"><h3>Assumptions</h3><ol>{parallelAnswer.assumptions.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ol></div>}{parallelAnswer.evidence.length > 0 && <div className="result-evidence"><h3>Evidence cited</h3><div>{parallelAnswer.evidence.map((item) => <code key={item}>{item}</code>)}</div></div>}{parallelAnswer.openQuestions.length > 0 && <div className="result-recommendations"><h3>Open questions</h3><ol>{parallelAnswer.openQuestions.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ol></div>}</article> : <div className="empty compact"><div>{selectedActive ? <LoaderCircle className="spin" size={24} /> : <ShieldCheck size={24} />}<p>{selectedActive ? "Sol is still answering." : "No answer was recorded."}</p></div></div>}</> : detailTab === "result" ? <><div className="content-heading"><span>{viewingCandidate ? `${viewedCandidate?.label} response` : "Review result"}</span><code>{viewingCandidate ? outcomeLabel(viewedCandidate?.internalCode) : stateLabel(detail.job.state)}</code></div>{readableResult ? <ResultCard result={readableResult} phoneOnly={viewingCandidate && viewedCandidate?.id !== detail.job.selectedCandidateId} /> : <div className="empty compact"><div>{selectedActive || viewedCandidate?.state === "RUNNING" ? <LoaderCircle className="spin" size={24} /> : <ShieldCheck size={24} />}<p>{selectedActive || viewedCandidate?.state === "RUNNING" ? "The review is still running." : "No substantive review was released."}</p></div></div>}{privateCodexResponse && <section className="private-codex-response"><div className="content-heading secondary"><span>Codex response that was not released</span></div><ResultCard result={privateCodexResponse} phoneOnly /></section>}{usage.input > 0 && <div className="usage-summary"><div><span>Input</span><strong>{usage.input.toLocaleString()}</strong></div><div><span>Output</span><strong>{usage.output.toLocaleString()}</strong></div><div><span>Reasoning</span><strong>{usage.reasoning.toLocaleString()}</strong></div></div>}</> : null}
+              {detailTab === "result" && parallelJob ? <><div className="content-heading"><span>Independent answer</span><code>Phone only</code></div>{parallelAnswer ? <article className="readable-result not-released"><div className="phone-only-label"><LockKeyhole size={14} /><span>Phone only. This was never sent to Claude.</span></div><div className="result-verdict"><div><span>Confidence</span><strong>{parallelAnswer.confidence || "Unstated"}</strong></div></div><div className="result-assessment"><h3>Answer</h3><p>{parallelAnswer.answer}</p></div>{parallelAnswer.approach && <div className="result-counterargument"><h3>Approach</h3><p>{parallelAnswer.approach}</p></div>}{parallelAnswer.assumptions.length > 0 && <div className="result-recommendations"><h3>Assumptions</h3><ol>{parallelAnswer.assumptions.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ol></div>}{parallelAnswer.evidence.length > 0 && <div className="result-evidence"><h3>Evidence cited</h3><div>{parallelAnswer.evidence.map((item) => <code key={item}>{item}</code>)}</div></div>}{parallelAnswer.openQuestions.length > 0 && <div className="result-recommendations"><h3>Open questions</h3><ol>{parallelAnswer.openQuestions.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ol></div>}</article> : <div className="empty compact"><div>{selectedActive ? <LoaderCircle className="spin" size={24} /> : <ShieldCheck size={24} />}<p>{selectedActive ? "Sol is still answering." : "No answer was recorded."}</p></div></div>}</> : detailTab === "result" ? <><div className="content-heading"><span>{viewingCandidate ? `${viewedCandidate?.label} response` : "Review result"}</span><code>{viewingCandidate ? outcomeLabel(viewedCandidate?.internalCode) : stateLabel(detail.job.state)}</code></div>{readableResult ? <ResultCard result={readableResult} phoneOnly={viewingCandidate && viewedCandidate?.id !== detail.job.selectedCandidateId} /> : <div className="empty compact"><div>{selectedActive || viewedCandidate?.state === "RUNNING" ? <LoaderCircle className="spin" size={24} /> : <ShieldCheck size={24} />}<p>{selectedActive || viewedCandidate?.state === "RUNNING" ? "The review is still running." : "No substantive review was released."}</p></div></div>}<ResearchTrace source={viewingCandidate ? viewedCandidate : detail.job} result={readableResult} />{privateCodexResponse && <section className="private-codex-response"><div className="content-heading secondary"><span>Codex response that was not released</span></div><ResultCard result={privateCodexResponse} phoneOnly /></section>}{usage.input > 0 && <div className="usage-summary"><div><span>Input</span><strong>{usage.input.toLocaleString()}</strong></div><div><span>Output</span><strong>{usage.output.toLocaleString()}</strong></div><div><span>Reasoning</span><strong>{usage.reasoning.toLocaleString()}</strong></div></div>}</> : null}
               {detailTab === "raw" && <><div className="raw-intro"><TerminalSquare size={16} /><span>Exact technical records for troubleshooting.{viewingCandidate ? ` Showing ${viewedCandidate?.label}.` : ""}</span></div><div className="content-heading"><span>Codex event stream</span><code>{shownLive ? formatBytes(new Blob([shownLive]).size) : "0 B"}</code></div><pre className="code-block raw-block">{shownLive || "No Codex event stream was retained."}</pre><div className="content-heading secondary"><span>{viewingCandidate ? "Gate output for this candidate" : "Released result"}</span></div><pre className="code-block raw-block">{shownResult || "No released result was retained."}</pre><div className="content-heading secondary"><span>Final Codex response before release checks</span></div><pre className="code-block raw-block">{shownRaw || "No final Codex response was retained."}</pre></>}
             </div>
           </>}

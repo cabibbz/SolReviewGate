@@ -180,7 +180,27 @@ assert.equal(thirdDetail.body.job.reasoning, "high");
 assert.equal(thirdDetail.body.job.protocolVersion, "alignment-strict-v1");
 assert.notEqual(thirdDetail.body.job.policyHash, detailAfter.body.job.policyHash);
 assert.equal(thirdDetail.body.job.schemaHash, detailAfter.body.job.schemaHash);
+// A packet-only run reports no research trace at all, so "off" and "searched nothing" differ.
+assert.equal(thirdDetail.body.job.research, false);
+assert.equal(thirdDetail.body.job.searchCount, undefined);
 step("selected model and protocol recorded on the next approved review");
+
+const researchSettings = await signedFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ research: true }) });
+assert.equal(researchSettings.response.status, 200);
+assert.equal(researchSettings.body.settings.research, true);
+const researchClient = await runClient(enrollment.body.token, `${packet}\nResearch this.`);
+const researchJob = await waitForJob(new Set([firstJob.id, secondJob.id, thirdJob.id]));
+assert.equal((await signedFetch(`/api/admin/jobs/${researchJob.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "approve" }) })).response.status, 200);
+assert.equal((await researchClient.completed).code, 0);
+const researchDetail = await signedFetch(`/api/admin/jobs/${researchJob.id}`);
+assert.equal(researchDetail.body.job.research, true);
+assert.equal(researchDetail.body.job.protocolVersion, "alignment-strict-v1+research");
+assert.equal(researchDetail.body.job.searchCount, 1);
+assert.deepEqual(researchDetail.body.job.searchLog, ["fixture query for gpt-5.6-terra"]);
+// The queries are operator-visible and the client still receives only the review.
+assert.ok(!(await researchClient.completed).stdout.includes("fixture query"));
+assert.equal((await signedFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ research: false }) })).response.status, 200);
+step("research run recorded the searches that left the sandbox");
 
 const panel = [
   { model: "gpt-5.6-sol", reasoning: "medium", protocolId: "baseline" },
