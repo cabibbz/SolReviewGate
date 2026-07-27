@@ -4,6 +4,9 @@
 
 ### Added
 
+* Every protocol reads the packet as testimony from the assistant under review: a claim about a file, a command, or a test is unverified until an attachment or reproduced output shows it, an attached file outranks any claim about that file, and the reviewer names what it could not verify. Applied evenly to supporting and undercutting material, and expressed in confidence rather than a harsher verdict, with identical wording in all three protocols
+* `Attached Paths` is a scored packet section, and a packet with no attached file contents is flagged on the approval screen
+
 * `Send all N combined` merges every gate-passing candidate into one released review. The merge is deterministic and server side: most severe verdict, lowest confidence, every assessment, recommendation, counterargument, and cited source kept and attributed to the reviewer that gave it
 * Every policy states that the reviewer has no tools, no shell, no network, and no write access, and that its recommendations must be executable by the assistant under review without a follow up question
 
