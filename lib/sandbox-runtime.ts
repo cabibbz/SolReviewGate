@@ -121,6 +121,16 @@ function eventText(value: unknown, depth = 0): string | undefined {
   return undefined;
 }
 
+// Why a worker run produced nothing. Only the last case is a genuine isolation rejection; the other
+// two are deployment faults that would otherwise be indistinguishable from a model refusing to answer.
+export function classifyWorkerFailure(text: string): "MODEL_UNAVAILABLE" | "SANDBOX_CONFIG_REJECTED" | "WORKER_REJECTED" {
+  // Codex falls back to generic metadata for an id it cannot resolve, which produces a useless run.
+  if (/Model metadata for .([^`"]+). not found/.test(text)) return "MODEL_UNAVAILABLE";
+  // --strict-config rejects an unknown key or value before the model is ever called.
+  if (/Error loading config\.toml|unknown variant|unknown field|invalid type: /.test(text)) return "SANDBOX_CONFIG_REJECTED";
+  return "WORKER_REJECTED";
+}
+
 export function normalizeCodexEvents(value: string, fallbackAt = Date.now(), scope = "codex"): ReviewEvent[] {
   return value.split("\n").flatMap<ReviewEvent>((line, index): ReviewEvent[] => {
     if (!line.trim()) return [];
@@ -580,8 +590,7 @@ async function pollCandidate(id: string, candidate: ReviewCandidate, store: Stor
     }
     const envelope = JSON.parse(resultBuffer.toString("utf8")) as WorkerEnvelope;
     const invalid = envelope.version !== 1 || envelope.exitCode !== 0 || envelope.toolAttempt || envelope.secretLeak || envelope.malformedEvents;
-    // Codex falls back to generic metadata for an id it cannot resolve, which produces a useless run.
-    const missingModel = /Model metadata for .([^`"]+). not found/.exec(`${live}\n${envelope.diagnostics || ""}`);
+    const workerCode = classifyWorkerFailure(`${live}\n${envelope.diagnostics || ""}`);
     const job = await adminGetJob(id, store);
     if (job?.kind === "parallel") {
       // Nothing is released, so the answer is recorded rather than gated.
@@ -589,7 +598,7 @@ async function pollCandidate(id: string, candidate: ReviewCandidate, store: Stor
         output: OPAQUE_OUTPUT,
         raw: envelope.candidate || envelope.diagnostics,
         releasable: false,
-        internalCode: invalid ? (missingModel ? "MODEL_UNAVAILABLE" : "WORKER_REJECTED") : "ANSWER_RECORDED",
+        internalCode: invalid ? workerCode : "ANSWER_RECORDED",
       }, store);
     } else {
       const analysis = invalid ? null : analyzeInternalReview(envelope.candidate);
@@ -597,7 +606,7 @@ async function pollCandidate(id: string, candidate: ReviewCandidate, store: Stor
         output: analysis?.output || OPAQUE_OUTPUT,
         raw: envelope.candidate || envelope.diagnostics,
         releasable: Boolean(!invalid && analysis?.released),
-        internalCode: invalid ? (missingModel ? "MODEL_UNAVAILABLE" : "WORKER_REJECTED") : analysis?.code || "GATE_INVALID_SCHEMA",
+        internalCode: invalid ? workerCode : analysis?.code || "GATE_INVALID_SCHEMA",
       }, store);
     }
     if (live && job) await saveCandidateLive(id, candidate.id, live, jobTtl(job), store);

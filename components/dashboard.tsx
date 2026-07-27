@@ -279,6 +279,7 @@ function outcomeLabel(code?: string): string {
     OPERATOR_WITHHELD: "Operator released nothing",
     RELEASED_COMBINED: "Released combined",
     MODEL_UNAVAILABLE: "Model not available to this account",
+    SANDBOX_CONFIG_REJECTED: "Sandbox configuration rejected",
     ANSWER_RECORDED: "Answer recorded",
     FILTERED: "Legacy unclassified",
     MOCK: "Mock run",
@@ -970,7 +971,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   const releasedRuns = fingerprinted.filter((run) => run.internalCode === "RELEASED" || run.internalCode === "MOCK" || run.releasable).length;
   const modelWithheldRuns = fingerprinted.filter((run) => run.internalCode === "MODEL_WITHHELD").length;
   const wrapperBlockedRuns = fingerprinted.filter((run) => run.internalCode.startsWith("GATE_")).length;
-  const systemFailureRuns = fingerprinted.filter((run) => ["WORKER_REJECTED", "START_FAILED", "POLL_FAILED", "AUTH_UNAVAILABLE"].includes(run.internalCode)).length;
+  const systemFailureRuns = fingerprinted.filter((run) => ["WORKER_REJECTED", "START_FAILED", "POLL_FAILED", "AUTH_UNAVAILABLE", "MODEL_UNAVAILABLE", "SANDBOX_CONFIG_REJECTED"].includes(run.internalCode)).length;
   const unclassifiedRuns = Math.max(0, fingerprinted.length - releasedRuns - modelWithheldRuns - wrapperBlockedRuns - systemFailureRuns);
   const releaseRate = fingerprinted.length ? Math.round((releasedRuns / fingerprinted.length) * 100) : 0;
   const operatorWithheldJobs = completedRuns.filter((job) => job.internalCode === "OPERATOR_WITHHELD").length;

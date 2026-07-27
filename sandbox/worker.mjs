@@ -50,7 +50,9 @@ const args = [
   "--strict-config", "--dangerously-bypass-hook-trust",
   "--model", model,
   "-c", `model_reasoning_effort=\"${reasoning}\"`,
-  "-c", `web_search="${research ? "enabled" : "disabled"}"`,
+  // Codex accepts disabled, cached, indexed, or live. "live" is the only one that reaches the web,
+  // and --strict-config turns any other value into an immediate config load failure.
+  "-c", `web_search="${research ? "live" : "disabled"}"`,
   "-c", "approval_policy=\"never\"",
   "--sandbox", "read-only",
   "--skip-git-repo-check",

@@ -4,6 +4,9 @@
 
 ### Fixed
 
+* Research runs reach the web. The worker asked Codex for `web_search="enabled"`, which is not one of the accepted variants, so `--strict-config` failed the run at configuration load in about a second and no researched review ever ran. The value is now `live`, and a test asserts both branches stay inside the documented set
+* A run Codex refuses to configure is recorded as `SANDBOX_CONFIG_REJECTED` rather than `Worker rejected`, so a deployment fault no longer reads like a model or isolation outcome. `MODEL_UNAVAILABLE` and the new code both count as system failures in the lab instead of falling into unclassified
+
 * Both installers install the `/solute` skill. It shipped as a documented command that no installer ever wrote to disk, so `/solute` did not exist after installing. The Windows uninstaller removes it, the release packager verifies it is present in both archives, and a test asserts every skill directory in the repository is installed, packaged, and removed
 * The POSIX installer stages the client and both skills in a temporary directory, validates them there, and copies them into place only after every check passes, so a bad download no longer replaces a working installation
 * The POSIX installer has test coverage: a successful install against a local server and a rejected install when a skill does not carry its expected name
