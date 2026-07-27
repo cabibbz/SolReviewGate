@@ -1,7 +1,7 @@
 import { gunzipSync } from "node:zlib";
 import { config } from "@/lib/config";
 import { decryptBuffer, decryptText, encryptBuffer, encryptText, randomToken, safeEqual, sha256 } from "@/lib/crypto";
-import { OPAQUE_OUTPUT } from "@/lib/gate";
+import { combineReviews, containsDisqualifyingText, isValidClientOutput, OPAQUE_OUTPUT } from "@/lib/gate";
 import { getStore, type Store } from "@/lib/store";
 import type { ClientRecord, JobKind, JobState, ReviewCandidate, ReviewEvent, ReviewJob, RunSummary } from "@/lib/types";
 
@@ -480,6 +480,7 @@ function gateEvent(internalCode: string, opaque: boolean): Pick<ReviewEvent, "ti
     POLL_FAILED: { title: "Review became unavailable", message: "The running review could not be recovered or completed." },
     AUTH_UNAVAILABLE: { title: "Codex authentication unavailable", message: "The authenticated Codex snapshot was unavailable." },
     OPERATOR_WITHHELD: { title: "Operator released no candidate", message: "Every candidate stayed on this phone. The client received the fixed terminal response." },
+    RELEASED_COMBINED: { title: "Combined review released", message: "Every candidate that passed the release checks was merged into one review, with each reviewer attributed." },
   };
   return outcomes[internalCode] || (opaque
     ? { title: "Review was not released", message: `Unclassified outcome: ${internalCode}.` }
@@ -542,6 +543,30 @@ export async function releaseCandidate(id: string, candidateId: string | null, s
   const candidate = await getCandidate(id, candidateId, store);
   if (!candidate || candidate.state !== "COMPLETE" || !candidate.releasable || candidate.postRelease) throw new JobError("INVALID_CANDIDATE");
   return publishCandidate(id, candidateId, store);
+}
+
+/**
+ * Releases every gate-passing candidate as one combined review. The merge is deterministic and
+ * keeps each reviewer's assessment, recommendations, counterargument, and cited sources, so no
+ * model stands between the operator and what the reviewers actually said.
+ */
+export async function releaseCombined(id: string, labels: Record<string, string>, store: Store = getStore()): Promise<ReviewJob> {
+  const job = await store.get<ReviewJob>(jobKey(id));
+  if (!job) throw new JobError("NOT_FOUND");
+  if (job.state !== "AWAITING_SELECTION") throw new JobError("INVALID_STATE");
+  const candidates = (await listCandidates(id, store)).filter((candidate) => candidate.releasable && !candidate.postRelease && candidate.state === "COMPLETE");
+  if (candidates.length < 2) throw new JobError("INVALID_CANDIDATE");
+  const entries = await Promise.all(candidates.map(async (candidate) => ({
+    label: labels[candidate.id] || candidate.model,
+    output: (await candidateOutput(id, candidate.id, store)) || "",
+  })));
+  const combined = combineReviews(entries);
+  if (!combined || !isValidClientOutput(combined) || containsDisqualifyingText(combined)) throw new JobError("INVALID_CANDIDATE");
+  const raw = JSON.stringify(entries.map((entry) => ({ label: entry.label, output: entry.output })));
+  return saveTerminalResult(id, combined, raw, false, "RELEASED_COMBINED", store, {
+    combinedFrom: candidates.map((candidate) => candidate.id),
+    selectedCandidateId: undefined,
+  });
 }
 
 export async function rejectJob(id: string, store: Store = getStore()): Promise<void> {

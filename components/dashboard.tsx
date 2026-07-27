@@ -276,6 +276,7 @@ function outcomeLabel(code?: string): string {
     POLL_FAILED: "Runtime failure",
     AUTH_UNAVAILABLE: "Authentication unavailable",
     OPERATOR_WITHHELD: "Operator released nothing",
+    RELEASED_COMBINED: "Released combined",
     MODEL_UNAVAILABLE: "Model not available to this account",
     ANSWER_RECORDED: "Answer recorded",
     FILTERED: "Legacy unclassified",
@@ -541,6 +542,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   const [serviceOrigin, setServiceOrigin] = useState("");
   const detailPanelRef = useRef<HTMLDivElement>(null);
   const candidateStripRef = useRef<HTMLDivElement>(null);
+  const candidateComparisonRef = useRef<ReturnType<typeof comparison>>(null);
 
   const loadHealth = useCallback(async () => {
     const response = await fetch("/api/health", { cache: "no-store" });
@@ -764,13 +766,15 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
     } finally { setBusy(""); }
   };
 
-  const releaseSelection = async (candidateId: string | null) => {
+  const releaseSelection = async (candidateId: string | null, combine = false) => {
     if (!selectedId) return;
-    const key = candidateId || "none";
+    const key = combine ? "combined" : candidateId || "none";
     if (releaseConfirm !== key) { setReleaseConfirm(key); return; }
     setBusy(`release:${key}`); setError("");
     try {
-      const response = await signedFetch(`/api/admin/jobs/${selectedId}/selection`, { method: "POST", body: JSON.stringify({ candidateId }) });
+      // Labels come from the comparison so the merged review names reviewers the way the screen does.
+      const labels = Object.fromEntries((candidateComparisonRef.current?.rows || []).map((row) => [row.id, row.label]));
+      const response = await signedFetch(`/api/admin/jobs/${selectedId}/selection`, { method: "POST", body: JSON.stringify(combine ? { combine: true, labels } : { candidateId }) });
       if (!response.ok) throw new Error("That candidate could not be released.");
       setReleaseConfirm(null);
       await Promise.all([loadJobs(), loadDetail(selectedId), loadEvents(selectedId)]);
@@ -944,6 +948,8 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   const parallelAnswer = parallelJob ? parseParallelAnswer(shownRaw) : null;
   const shownEvents = viewingCandidate ? candidateDetail?.events || [] : events;
   const candidateComparison = comparison(candidates);
+  candidateComparisonRef.current = candidateComparison;
+  const releasableCandidates = candidates.filter((candidate) => candidate.releasable && !candidate.postRelease).length;
   const comparisonReady = (runConfig?.settings.panel.length || 0) > 1;
   const awaitingSelection = detail?.job.state === "AWAITING_SELECTION";
   const canRunAgain = Boolean(detail && (awaitingSelection || detail.job.state === "COMPLETE_REVIEW" || detail.job.state === "COMPLETE_OPAQUE"));
@@ -1062,7 +1068,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
               <button className="btn danger big" type="button" onClick={() => void decision("reject")} disabled={Boolean(busy)}><X size={17} /> Reject</button>
             </div>
           </> : <>
-            <div className="panel decision-note"><LockKeyhole size={15} /><span>Nothing has reached Claude yet. Release one response, or release nothing. This decision is final for the packet.</span></div>
+            <div className="panel decision-note"><LockKeyhole size={15} /><span>Nothing has reached Claude yet. Send one response, send every usable one merged into a single review, or send nothing. This decision is final for the packet.</span></div>
             {candidateComparison && <div className="panel compare-panel">
               <div className="compare-agreement"><strong>{candidateComparison.agreement}</strong></div>
               <div className="matrix-scroll"><table className="compare-table"><thead><tr><th scope="col">Model</th><th scope="col">Verdict</th><th scope="col">Confidence</th></tr></thead><tbody>{candidateComparison.rows.map((row) => <tr key={row.id} className={row.releasable ? "" : "blocked-row"}><th scope="row"><strong>{row.model}</strong><span>{shortProtocol(row.protocolVersion)} · {row.reasoning}</span></th><td>{row.verdict}</td><td>{row.confidence || "—"}</td></tr>)}</tbody></table></div>
@@ -1076,7 +1082,7 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
                 <button className={`btn big ${releaseConfirm === candidate.id ? "primary" : ""}`} type="button" disabled={!candidate.releasable || Boolean(busy)} onClick={() => void releaseSelection(candidate.id)}>{busy === `release:${candidate.id}` ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />} {releaseConfirm === candidate.id ? "Confirm: send this to Claude" : "Send this to Claude"}</button>
               </article>;
             })}</div>
-            <div className="action-bar"><button className={`btn big ${releaseConfirm === "none" ? "danger" : ""}`} type="button" disabled={Boolean(busy)} onClick={() => void releaseSelection(null)}><X size={17} /> {releaseConfirm === "none" ? "Confirm: send nothing" : "Send nothing to Claude"}</button></div>
+            <div className="action-bar">{releasableCandidates > 1 && <button className={`btn big ${releaseConfirm === "combined" ? "primary" : ""}`} type="button" disabled={Boolean(busy)} onClick={() => void releaseSelection(null, true)}>{busy === "release:combined" ? <LoaderCircle className="spin" size={17} /> : <Layers size={17} />} {releaseConfirm === "combined" ? `Confirm: send all ${releasableCandidates} combined` : `Send all ${releasableCandidates} combined`}</button>}<button className={`btn big ${releaseConfirm === "none" ? "danger" : ""}`} type="button" disabled={Boolean(busy)} onClick={() => void releaseSelection(null)}><X size={17} /> {releaseConfirm === "none" ? "Confirm: send nothing" : "Send nothing to Claude"}</button></div>
           </>}
         </> : <div className="panel all-clear">
           <ShieldCheck size={30} />

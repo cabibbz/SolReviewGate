@@ -125,6 +125,18 @@ Each finished candidate also appends a compact run summary to the job record, so
 
 An unanswered packet stays valid for `SOL_JOB_TTL_SECONDS`. If the client stops waiting before a selection, it receives the fixed terminal response, and the candidates remain readable on the phone.
 
+## Combined Release
+
+An operator can release one candidate or merge every gate-passing candidate into one review. The merge is a pure function over already-released text, evaluated on the server, so no additional model call stands between the reviewers and the client.
+
+| Field | Rule |
+| --- | --- |
+| Verdict | Most severe of `SOUND`, `NEEDS_IMPROVEMENT`, `WRONG` |
+| Confidence | Lowest reported |
+| Assessment, recommendations, counterargument, evidence | Kept in full and attributed, with shared items stated once naming every reviewer that raised them |
+
+The combined text passes `isValidClientOutput` and the refusal scan before release, and the job records `RELEASED_COMBINED` with `combinedFrom` listing the merged candidates. Candidates that withheld, were blocked, or were created after release are excluded.
+
 ## Protocol Catalog
 
 Each selectable protocol is a policy file in `sandbox` with a stable id and a recorded version. A protocol id is resolved through the catalog only, so a submitted value never reaches a filesystem path.

@@ -4,6 +4,9 @@
 
 ### Added
 
+* `Send all N combined` merges every gate-passing candidate into one released review. The merge is deterministic and server side: most severe verdict, lowest confidence, every assessment, recommendation, counterargument, and cited source kept and attributed to the reviewer that gave it
+* Every policy states that the reviewer has no tools, no shell, no network, and no write access, and that its recommendations must be executable by the assistant under review without a follow up question
+
 * `/sol` declares an `Attached Paths` section and the client reads those files and folders itself, appending their exact contents with a SHA-256 per file, so the reviewer verifies the code rather than a description of it
 * Attached content skips credential files, binaries, oversized files, excluded build directories, and anything outside the working directory, redacts credential lines, and reports everything it left out
 * The approval screen shows how many files and how many bytes are attached

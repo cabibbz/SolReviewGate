@@ -75,6 +75,101 @@ export function renderReview(review: InternalReview): string {
   return `VERDICT: ${review.verdict}\nCONFIDENCE: ${review.confidence}\nASSESSMENT:\n${review.assessment}${evidence}${counterargument}${recommendations}`;
 }
 
+
+export interface RenderedReview {
+  verdict: "SOUND" | "NEEDS_IMPROVEMENT" | "WRONG";
+  confidence: "LOW" | "MEDIUM" | "HIGH";
+  assessment: string;
+  evidenceCited: string[];
+  counterargument: string;
+  recommendations: string[];
+}
+
+const verdictSeverity: Record<RenderedReview["verdict"], number> = { SOUND: 0, NEEDS_IMPROVEMENT: 1, WRONG: 2 };
+const confidenceRank: Record<RenderedReview["confidence"], number> = { LOW: 0, MEDIUM: 1, HIGH: 2 };
+
+function section(value: string, label: string, following: string[]): string {
+  const start = value.indexOf(`${label}:`);
+  if (start < 0) return "";
+  const from = start + label.length + 1;
+  const ends = following.map((next) => value.indexOf(`\n${next}:`, from)).filter((index) => index >= 0);
+  return value.slice(from, ends.length ? Math.min(...ends) : value.length).trim();
+}
+
+function listItems(value: string): string[] {
+  return value.split("\n").map((line) => line.replace(/^\s*-\s*/, "").trim()).filter((line) => line && line !== "None" && line !== "None identified.");
+}
+
+/** Reads a released review back into its parts so several of them can be combined. */
+export function parseRenderedReview(value: string): RenderedReview | null {
+  const normalized = normalizeOutput(value);
+  const verdict = section(normalized, "VERDICT", ["CONFIDENCE", "ASSESSMENT", "EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const confidence = section(normalized, "CONFIDENCE", ["ASSESSMENT", "EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const assessment = section(normalized, "ASSESSMENT", ["EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  if (!(verdict in verdictSeverity) || !(confidence in confidenceRank) || !assessment) return null;
+  return {
+    verdict: verdict as RenderedReview["verdict"],
+    confidence: confidence as RenderedReview["confidence"],
+    assessment,
+    evidenceCited: listItems(section(normalized, "EVIDENCE CITED", ["COUNTERARGUMENT", "RECOMMENDATIONS"])),
+    counterargument: section(normalized, "COUNTERARGUMENT", ["RECOMMENDATIONS"]),
+    recommendations: listItems(section(normalized, "RECOMMENDATIONS", [])),
+  };
+}
+
+/**
+ * Merges several released reviews into one release without a model in the middle. Nothing is
+ * summarised away: the verdict is the most severe of them, the confidence the lowest, and every
+ * assessment, recommendation, counterargument, and cited source is kept and attributed.
+ */
+export function combineReviews(entries: { label: string; output: string }[]): string | null {
+  const parsed = entries
+    .map((entry) => ({ label: entry.label, review: parseRenderedReview(entry.output) }))
+    .filter((entry): entry is { label: string; review: RenderedReview } => Boolean(entry.review));
+  if (parsed.length < 2) return null;
+
+  const verdict = parsed.reduce((worst, entry) => verdictSeverity[entry.review.verdict] > verdictSeverity[worst] ? entry.review.verdict : worst, "SOUND" as RenderedReview["verdict"]);
+  const confidence = parsed.reduce((lowest, entry) => confidenceRank[entry.review.confidence] < confidenceRank[lowest] ? entry.review.confidence : lowest, "HIGH" as RenderedReview["confidence"]);
+
+  const tally = new Map<string, string[]>();
+  for (const entry of parsed) tally.set(entry.review.verdict, [...(tally.get(entry.review.verdict) || []), entry.label]);
+  const agreement = tally.size === 1
+    ? `All ${parsed.length} reviewers returned ${verdict}.`
+    : `The reviewers disagreed: ${[...tally.entries()].map(([value, labels]) => `${value} from ${labels.join(", ")}`).join("; ")}. The combined verdict takes the most severe, and the lowest confidence any reviewer reported.`;
+
+  const attributed = <T,>(pick: (review: RenderedReview) => T[]) => {
+    const order: string[] = [];
+    const sources = new Map<string, string[]>();
+    for (const entry of parsed) {
+      for (const item of pick(entry.review) as unknown as string[]) {
+        if (!sources.has(item)) { sources.set(item, []); order.push(item); }
+        sources.get(item)!.push(entry.label);
+      }
+    }
+    return order.map((item) => ({ item, labels: sources.get(item)! }));
+  };
+
+  const assessments = parsed.map((entry) => `${entry.label} (${entry.review.verdict}, ${entry.review.confidence} confidence):\n${entry.review.assessment}`).join("\n\n");
+  const evidence = attributed((review) => review.evidenceCited);
+  const recommendations = attributed((review) => review.recommendations);
+  const counterarguments = parsed.filter((entry) => entry.review.counterargument).map((entry) => `${entry.label}: ${entry.review.counterargument}`);
+
+  return [
+    `VERDICT: ${verdict}`,
+    `CONFIDENCE: ${confidence}`,
+    "ASSESSMENT:",
+    `Combined from ${parsed.length} independent reviews of the same packet. ${agreement}`,
+    "",
+    assessments,
+    "\nEVIDENCE CITED:",
+    evidence.length ? evidence.map(({ item, labels }) => `- ${item} (${labels.join(", ")})`).join("\n") : "- None",
+    "\nCOUNTERARGUMENT:",
+    counterarguments.length ? counterarguments.join("\n\n") : "None identified.",
+    "\nRECOMMENDATIONS:",
+    recommendations.length ? recommendations.map(({ item, labels }) => `- ${item} (${labels.join(", ")})`).join("\n") : "- None",
+  ].join("\n");
+}
+
 export function analyzeInternalReview(raw: string, knownSecrets: string[] = []): GateAnalysis {
   if (!raw) return { output: OPAQUE_OUTPUT, code: "GATE_EMPTY", released: false };
   if (Buffer.byteLength(raw, "utf8") > 4 * 1024 * 1024) return { output: OPAQUE_OUTPUT, code: "GATE_OVERSIZE", released: false };

@@ -80,6 +80,8 @@ export interface ReviewJob {
   workerHash?: string;
   candidateCount?: number;
   selectedCandidateId?: string;
+  /** Candidate ids merged into one released review. */
+  combinedFrom?: string[];
   /** Compact per-run record kept on the job so the lab can group outcomes without reading every candidate. */
   runs?: RunSummary[];
 }
