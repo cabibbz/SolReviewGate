@@ -17,6 +17,7 @@ import {
   publishCandidate,
   registerClient,
   releaseCandidate,
+  releaseCombined,
   saveCandidateResult,
   storageSummary,
   transitionJob,
@@ -232,4 +233,49 @@ test("a job already moved on does not fail the run that moved it", async () => {
     (error: unknown) => error instanceof JobError && error.code === "INVALID_STATE",
   );
   assert.equal((await store.get<ReviewJob>(`sol:job:${job.id}`))?.state, "RUNNING");
+});
+
+test("combines every gate-passing candidate into one released review", async () => {
+  const store = getStore();
+  const { job, capability } = await approvedJob(store);
+  const first = await candidateWith(job.id, "gpt-5.6-terra", "baseline", "alignment-v1", store, {
+    output: "VERDICT: SOUND\nCONFIDENCE: HIGH\nASSESSMENT:\nTerra found the rollback covered.\nEVIDENCE CITED:\n- S1\nCOUNTERARGUMENT:\nNone identified.\nRECOMMENDATIONS:\n- Add a rollback test",
+    releasable: true,
+    internalCode: "RELEASED",
+  });
+  const second = await candidateWith(job.id, "gpt-5.6-luna", "strict", "alignment-strict-v1", store, {
+    output: "VERDICT: WRONG\nCONFIDENCE: LOW\nASSESSMENT:\nLuna found a missing backfill.\nEVIDENCE CITED:\n- S2\nCOUNTERARGUMENT:\nS2 may be stale.\nRECOMMENDATIONS:\n- Backfill before dropping",
+    releasable: true,
+    internalCode: "RELEASED",
+  });
+  // A candidate that failed the gate is never merged in.
+  await candidateWith(job.id, "gpt-5.6-sol", "control", "alignment-control-v1", store, { output: OPAQUE_OUTPUT, releasable: false, internalCode: "MODEL_WITHHELD" });
+  await transitionJob(job.id, ["RUNNING"], "AWAITING_SELECTION", {}, store);
+
+  const released = await releaseCombined(job.id, { [first.id]: "gpt-5.6-terra", [second.id]: "gpt-5.6-luna" }, store);
+  assert.equal(released.state, "COMPLETE_REVIEW");
+  assert.equal(released.internalCode, "RELEASED_COMBINED");
+  assert.deepEqual(released.combinedFrom, [first.id, second.id]);
+  assert.equal(released.selectedCandidateId, undefined);
+
+  const answer = await clientResult(job.id, capability, store);
+  const output = answer.pending === false ? answer.output : "";
+  assert.match(output, /^VERDICT: WRONG\nCONFIDENCE: LOW\n/);
+  assert.match(output, /Terra found the rollback covered\./);
+  assert.match(output, /Luna found a missing backfill\./);
+  assert.match(output, /- Add a rollback test \(gpt-5\.6-terra\)/);
+  assert.match(output, /- Backfill before dropping \(gpt-5\.6-luna\)/);
+  assert.doesNotMatch(output, /Bob Regress/);
+
+  // The packet is still answered once.
+  await assert.rejects(() => releaseCombined(job.id, {}, store), (error: unknown) => error instanceof JobError && error.code === "INVALID_STATE");
+});
+
+test("refuses to combine when only one candidate passed the gate", async () => {
+  const store = getStore();
+  const { job } = await approvedJob(store);
+  await candidateWith(job.id, "gpt-5.6-sol", "baseline", "alignment-v1", store, { output: "VERDICT: SOUND\nCONFIDENCE: HIGH\nASSESSMENT:\nOnly one.", releasable: true, internalCode: "RELEASED" });
+  await candidateWith(job.id, "gpt-5.6-luna", "control", "alignment-control-v1", store, { output: OPAQUE_OUTPUT, releasable: false, internalCode: "MODEL_WITHHELD" });
+  await transitionJob(job.id, ["RUNNING"], "AWAITING_SELECTION", {}, store);
+  await assert.rejects(() => releaseCombined(job.id, {}, store), (error: unknown) => error instanceof JobError && error.code === "INVALID_CANDIDATE");
 });

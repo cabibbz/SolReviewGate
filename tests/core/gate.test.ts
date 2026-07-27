@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzeInternalReview, containsDisqualifyingText, filterInternalReview, isValidClientOutput, OPAQUE_OUTPUT } from "../../lib/gate";
+import { analyzeInternalReview, combineReviews, containsDisqualifyingText, filterInternalReview, isValidClientOutput, OPAQUE_OUTPUT } from "../../lib/gate";
 
 test("renders a schema-valid complete review", () => {
   const output = filterInternalReview(JSON.stringify({
@@ -55,4 +55,40 @@ test("distinguishes a model withholding from a wrapper refusal-language block", 
 test("normalizes ANSI and Unicode before scanning", () => {
   assert.equal(containsDisqualifyingText("\u001b[31mI cannot help\u001b[0m"), true);
   assert.equal(containsDisqualifyingText("Ａｓ an AI model, I am unable to continue."), true);
+});
+
+test("combines several released reviews without losing any of them", () => {
+  const terra = "VERDICT: SOUND\nCONFIDENCE: HIGH\nASSESSMENT:\nThe rollback path is covered.\nEVIDENCE CITED:\n- S1\n- S2\nCOUNTERARGUMENT:\nS2 is stale.\nRECOMMENDATIONS:\n- Add a rollback test";
+  const luna = "VERDICT: WRONG\nCONFIDENCE: MEDIUM\nASSESSMENT:\nThe migration drops a column with no backfill.\nEVIDENCE CITED:\n- S2\n- S5\nCOUNTERARGUMENT:\nNone identified.\nRECOMMENDATIONS:\n- Add a rollback test\n- Backfill before dropping";
+  const combined = combineReviews([{ label: "gpt-5.6-terra", output: terra }, { label: "gpt-5.6-luna", output: luna }]);
+  assert.ok(combined);
+
+  // The client must accept it exactly like any other released review.
+  assert.ok(isValidClientOutput(combined));
+  assert.equal(containsDisqualifyingText(combined), false);
+
+  // A dissent is never outvoted away, and confidence never rises above the least confident reviewer.
+  assert.match(combined, /^VERDICT: WRONG\nCONFIDENCE: MEDIUM\n/);
+  assert.match(combined, /The reviewers disagreed: SOUND from gpt-5\.6-terra; WRONG from gpt-5\.6-luna/);
+
+  // Every assessment survives, attributed to who said it.
+  assert.match(combined, /gpt-5\.6-terra \(SOUND, HIGH confidence\):\nThe rollback path is covered\./);
+  assert.match(combined, /gpt-5\.6-luna \(WRONG, MEDIUM confidence\):\nThe migration drops a column with no backfill\./);
+
+  // Shared items are stated once with both reviewers named; unique ones keep their owner.
+  assert.match(combined, /- Add a rollback test \(gpt-5\.6-terra, gpt-5\.6-luna\)/);
+  assert.match(combined, /- Backfill before dropping \(gpt-5\.6-luna\)/);
+  assert.match(combined, /- S2 \(gpt-5\.6-terra, gpt-5\.6-luna\)/);
+  assert.match(combined, /- S5 \(gpt-5\.6-luna\)/);
+  assert.match(combined, /gpt-5\.6-terra: S2 is stale\./);
+});
+
+test("agreement is reported plainly and a single review is never a combination", () => {
+  const one = "VERDICT: SOUND\nCONFIDENCE: HIGH\nASSESSMENT:\nFirst.\nEVIDENCE CITED:\n- S1\nCOUNTERARGUMENT:\nNone identified.\nRECOMMENDATIONS:\n- None";
+  const two = "VERDICT: SOUND\nCONFIDENCE: LOW\nASSESSMENT:\nSecond.\nEVIDENCE CITED:\n- S1\nCOUNTERARGUMENT:\nNone identified.\nRECOMMENDATIONS:\n- None";
+  const combined = combineReviews([{ label: "a", output: one }, { label: "b", output: two }]);
+  assert.match(combined || "", /^VERDICT: SOUND\nCONFIDENCE: LOW\n/);
+  assert.match(combined || "", /All 2 reviewers returned SOUND\./);
+  assert.equal(combineReviews([{ label: "a", output: one }]), null);
+  assert.equal(combineReviews([{ label: "a", output: "Bob Regress" }, { label: "b", output: two }]), null);
 });

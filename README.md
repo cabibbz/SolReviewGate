@@ -197,6 +197,21 @@ When a comparison set is configured, the primary button on the approval screen r
 
 The environment values `SOL_MODEL`, `SOL_REASONING`, and `SOL_PROTOCOL_VERSION` remain the deployment defaults for a deployment that has never been configured from the phone.
 
+## What The Reviewer Can And Cannot Do
+
+The reviewer reads and reasons. It never edits.
+
+| Capability | State |
+| --- | --- |
+| Read the declared files, at full fidelity | Yes, through the packet |
+| Full scope, reasoning, and research over that material | Yes |
+| Instruct the assistant under review, precisely | Yes, through its recommendations |
+| Edit a file, run a command, reach the network, use MCP | No |
+
+That boundary is structural, not a promise in a prompt. The sandbox grants no tools at all, runs read only, and the worker terminates the run and releases nothing if a single tool, command, search, or file change event appears in the stream.
+
+Because the reviewer cannot act, its recommendations are the only way anything changes. Every policy therefore requires each recommendation to be executable by the assistant under review without asking a follow up question: the exact path, the specific location in the file, what is wrong, what to do instead, and what the result should satisfy. A reviewer must never write a recommendation as though it had already made the change, or claim to have run or verified anything.
+
 ## Give The Reviewer The Real Files
 
 A packet describes the code. `/sol` also declares, under `Attached Paths`, every file and folder the decision rests on, plus any path you granted for that review. **The client reads those paths itself** and appends their exact contents with a SHA-256 for each file, so the reviewer checks the code rather than a description of it, and the assistant under review cannot misquote what it cited.
@@ -224,9 +239,24 @@ The same **Run configuration** panel holds a **comparison set** of up to six con
 1. Each configuration reviews the same packet in its own isolated Sandbox, one after another.
 2. Nothing reaches Claude while the candidates run. The review waits in `AWAITING_SELECTION`.
 3. The phone shows every candidate with its model, protocol, outcome, transcript, and full response.
-4. **Release** sends exactly one candidate to Claude. **Release nothing** answers with the fixed terminal response.
+4. **Send this to Claude** on one card releases exactly that candidate. **Send all N combined** releases every candidate that passed the release checks as one merged review. **Send nothing** answers with the fixed terminal response.
 
 Before the individual responses, the screen shows the comparison itself: whether the answers agree, a table of model against verdict and confidence, and which packet sources each one actually used. Disagreement is visible without reading every response.
+
+### Combining instead of choosing
+
+**Send all N combined** merges every gate-passing candidate into a single release. The merge is deterministic and runs on the server with no model in the middle, because a model asked to synthesise could quietly soften the dissent that made the comparison worth running.
+
+| Field | How it merges |
+| --- | --- |
+| Verdict | The most severe any reviewer returned. A lone `WRONG` is never outvoted by two `SOUND`s |
+| Confidence | The lowest any reviewer reported |
+| Assessment | Every assessment in full, each headed by its reviewer, verdict, and confidence, above a line stating whether they agreed and who said what |
+| Recommendations | Every recommendation, stated once, naming each reviewer that made it |
+| Evidence cited | The union of cited sources, each naming the reviewers that used it |
+| Counterargument | Each reviewer's counterargument, attributed |
+
+Nothing is summarised away, so the combined review is longer than any single one. Candidates that withheld or were blocked are not merged in, and the combined text passes the same release checks as any other review before it reaches Claude.
 
 Rules that this selection does not bend:
 
