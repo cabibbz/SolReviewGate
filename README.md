@@ -89,7 +89,7 @@ $env:SOL_GATE_URL='https://your-private-pwa.example'; irm 'https://github.com/ca
 6. Paste the client token into the private terminal prompt.
 7. Restart Claude Code and run `/sol`.
 
-The installer validates the PWA and token before changing files. It installs the client under `%USERPROFILE%\.sol-review`, adds a personal Claude skill at `%USERPROFILE%\.claude\skills\sol\SKILL.md`, and adds the client command to the user PATH. It does not modify a project or restart an active Claude session.
+The installer validates the PWA and token before changing files. It installs the client under `%USERPROFILE%\.sol-review`, adds two personal Claude skills at `%USERPROFILE%\.claude\skills\sol\SKILL.md` and `%USERPROFILE%\.claude\skills\solute\SKILL.md`, and adds the client command to the user PATH. It does not modify a project or restart an active Claude session.
 
 To inspect the installer before running it:
 
@@ -105,7 +105,7 @@ For a visible downloaded installer, get `SolReviewGateWindows.zip` from the [lat
 SOL_GATE_URL='https://your-private-pwa.example' sh -c "$(curl -fsSL 'https://github.com/cabibbz/SolReviewGate/releases/latest/download/SolReviewSetup.sh')"
 ```
 
-The shell installer uses the same private token prompt and installs `/sol` as a personal Claude skill.
+The shell installer uses the same private token prompt and installs `/sol` and `/solute` as personal Claude skills.
 
 ### Claude Plugin Marketplace
 
@@ -117,7 +117,7 @@ This repository is also a Claude Code plugin marketplace:
 /reload-plugins
 ```
 
-The managed plugin exposes `/solreview:sol`. Run an operating system installer once to configure the PWA address and client credential. The personal installer remains the simplest path when you want the exact `/sol` command.
+The managed plugin exposes `/solreview:sol` and `/solreview:solute`. Run an operating system installer once to configure the PWA address and client credential. The personal installer remains the simplest path when you want the exact `/sol` and `/solute` commands.
 
 ## Use It In An Existing Session
 
@@ -330,6 +330,8 @@ A comparison set takes as long as its candidates need. `SOL_JOB_TTL_SECONDS` (on
 Use it to compare two independent attempts at the same problem: Claude's, which you see in your session, and Sol's, which you see on your phone. Because nothing returns, the comparison cannot influence the work it is measuring.
 
 `/sol` and `/solute` do not block each other. A parallel answer takes no approval slot, so it can be submitted while a review is still waiting for you.
+
+Both skills come from the same installer. An installation made before `/solute` existed has only `/sol`; run the installer again to add it.
 
 ## Use More Than One Computer
 

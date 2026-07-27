@@ -62,10 +62,10 @@ Sol Review Gate $Version
 1. Open Install.cmd.
 2. Enter the HTTPS address of your private PWA.
 3. Paste the client token created in the PWA.
-4. Restart Claude Code and run /sol.
+4. Restart Claude Code and run /sol or /solute.
 
 The installer writes only to your user profile. It does not modify a project.
-Run SolReviewRemove.ps1 to remove the client, credential, and personal skill.
+Run SolReviewRemove.ps1 to remove the client, credential, and personal skills.
 "@ | Set-Content -LiteralPath (Join-Path $windowsRoot "README.txt") -Encoding UTF8
 
   $pluginSourceRoot = Join-Path $pluginRoot "plugins"
@@ -84,7 +84,7 @@ Run SolReviewRemove.ps1 to remove the client, credential, and personal skill.
   $windowsArchive = [IO.Compression.ZipFile]::OpenRead($windowsZip)
   try {
     $windowsEntries = $windowsArchive.Entries.FullName | ForEach-Object { $_.Replace("\", "/") }
-    foreach ($required in @("Install.cmd", "SolReviewSetup.ps1", "SolReviewRemove.ps1", "payload/plugins/solreview/bin/solreview.js", "payload/plugins/solreview/skills/sol/SKILL.md")) {
+    foreach ($required in @("Install.cmd", "SolReviewSetup.ps1", "SolReviewRemove.ps1", "payload/plugins/solreview/bin/solreview.js", "payload/plugins/solreview/skills/sol/SKILL.md", "payload/plugins/solreview/skills/solute/SKILL.md")) {
       if ($windowsEntries -notcontains $required) {
         throw "Windows package is missing $required."
       }
@@ -96,7 +96,7 @@ Run SolReviewRemove.ps1 to remove the client, credential, and personal skill.
   $pluginArchive = [IO.Compression.ZipFile]::OpenRead($pluginZip)
   try {
     $pluginEntries = $pluginArchive.Entries.FullName | ForEach-Object { $_.Replace("\", "/") }
-    foreach ($required in @(".claude-plugin/marketplace.json", "plugins/solreview/.claude-plugin/plugin.json", "plugins/solreview/bin/solreview.js", "plugins/solreview/skills/sol/SKILL.md")) {
+    foreach ($required in @(".claude-plugin/marketplace.json", "plugins/solreview/.claude-plugin/plugin.json", "plugins/solreview/bin/solreview.js", "plugins/solreview/skills/sol/SKILL.md", "plugins/solreview/skills/solute/SKILL.md")) {
       if ($pluginEntries -notcontains $required) {
         throw "Plugin package is missing $required."
       }

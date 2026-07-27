@@ -8,10 +8,11 @@ install_root="${SOL_INSTALL_ROOT:-$HOME/.sol-review}"
 skills_root="${SOL_CLAUDE_SKILLS_ROOT:-$HOME/.claude/skills}"
 
 printf "\nSol Review Gate %s\n" "$release_version"
-printf "Claude Code client and personal /sol skill\n\n"
+printf "Claude Code client and personal /sol and /solute skills\n\n"
 printf "This installer writes only to your user profile:\n"
 printf "  %s\n" "$install_root"
-printf "  %s/sol\n\n" "$skills_root"
+printf "  %s/sol\n" "$skills_root"
+printf "  %s/solute\n\n" "$skills_root"
 
 if [ -z "$url" ]; then
   printf "Private PWA address (example: https://your-project.vercel.app): "
@@ -70,11 +71,29 @@ esac
 client_root="$install_root/client"
 bin_root="$install_root/bin"
 skill_root="$skills_root/sol"
-mkdir -p "$client_root" "$bin_root" "$skill_root"
+parallel_skill_root="$skills_root/solute"
+mkdir -p "$client_root" "$bin_root" "$skill_root" "$parallel_skill_root"
 
-curl --fail --silent --show-error "$repository_root/plugins/solreview/bin/solreview.js" -o "$client_root/solreview.js"
-curl --fail --silent --show-error "$repository_root/plugins/solreview/skills/sol/SKILL.md" -o "$skill_root/SKILL.md"
-node --check "$client_root/solreview.js"
+staging="$(mktemp -d)"
+trap 'rm -rf "$staging"' EXIT INT TERM
+
+curl --fail --silent --show-error "$repository_root/plugins/solreview/bin/solreview.js" -o "$staging/solreview.js"
+curl --fail --silent --show-error "$repository_root/plugins/solreview/skills/sol/SKILL.md" -o "$staging/sol.md"
+curl --fail --silent --show-error "$repository_root/plugins/solreview/skills/solute/SKILL.md" -o "$staging/solute.md"
+
+node --check "$staging/solreview.js"
+if ! grep -q "^name:[[:space:]]*sol[[:space:]]*$" "$staging/sol.md"; then
+  printf "The downloaded /sol skill did not pass validation.\n" >&2
+  exit 1
+fi
+if ! grep -q "^name:[[:space:]]*solute[[:space:]]*$" "$staging/solute.md"; then
+  printf "The downloaded /solute skill did not pass validation.\n" >&2
+  exit 1
+fi
+
+cp "$staging/solreview.js" "$client_root/solreview.js"
+cp "$staging/sol.md" "$skill_root/SKILL.md"
+cp "$staging/solute.md" "$parallel_skill_root/SKILL.md"
 
 cat > "$install_root/remote.json" <<EOF
 {"url":"$url","token":"$token"}
@@ -115,5 +134,5 @@ printf "\nInstallation complete.\n"
 if [ "$migrated" = "true" ]; then
   printf "A previous Sol Review command was migrated to the personal skill.\n"
 fi
-printf "Restart your shell and Claude Code, then run /sol in any existing or new session.\n"
+printf "Restart your shell and Claude Code, then run /sol or /solute in any existing or new session.\n"
 printf "No packet or configuration file was added to a Claude project.\n"
