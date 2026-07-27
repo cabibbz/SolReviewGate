@@ -2,6 +2,7 @@ import { gunzipSync } from "node:zlib";
 import { config } from "@/lib/config";
 import { decryptBuffer, decryptText, encryptBuffer, encryptText, randomToken, safeEqual, sha256 } from "@/lib/crypto";
 import { combineReviews, containsDisqualifyingText, isValidClientOutput, OPAQUE_OUTPUT } from "@/lib/gate";
+import { analyzePacketQuality } from "@/lib/packet-quality";
 import { getStore, type Store } from "@/lib/store";
 import type { ClientRecord, JobKind, JobState, ReviewCandidate, ReviewEvent, ReviewJob, RunSummary } from "@/lib/types";
 
@@ -391,8 +392,19 @@ export async function readPacket(job: ReviewJob, store: Store = getStore()): Pro
 export async function commitJob(id: string, capability: string, store: Store = getStore()): Promise<ReviewJob> {
   const job = await getAuthorizedJob(id, capability, store);
   if (job.state !== "UPLOADING") throw new JobError("INCOMPLETE_UPLOAD");
-  await readPacket(job, store);
-  const next: ReviewJob = { ...job, uploadedChunks: job.chunkCount, state: "AWAITING_APPROVAL", updatedAt: now() };
+  const packet = await readPacket(job, store);
+  // Counted here because the packet is already in hand for its integrity checks, and because the
+  // count belongs to the packet rather than to any one run of it: every candidate reads the same
+  // files. History and the lab then report it without decrypting a packet again.
+  const attachments = analyzePacketQuality(packet);
+  const next: ReviewJob = {
+    ...job,
+    uploadedChunks: job.chunkCount,
+    state: "AWAITING_APPROVAL",
+    attachedFiles: attachments.attachedFiles,
+    attachedBytes: attachments.attachedBytes,
+    updatedAt: now(),
+  };
   if (!(await store.transition(jobKey(id), ["UPLOADING"], next, ttlFor(next)))) throw new JobError("RACE");
   if (job.kind !== "parallel") await store.addPending(id, job.createdAt);
   await appendJobEvents(id, [{

@@ -294,6 +294,15 @@ button { cursor: pointer; }
 .research-trace h3 { margin: 12px 0 7px; font-size: 12px; }
 .research-trace ol { display: grid; gap: 7px; margin: 0; padding-left: 20px; }
 .research-trace li { padding-left: 3px; overflow-wrap: anywhere; color: #34403b; font-size: 13px; line-height: 1.55; }
+.file-evidence { margin-top: 18px; padding: 12px; border: 1px solid var(--line); border-left: 3px solid var(--green); border-radius: 5px; background: var(--surface); }
+.file-evidence .content-heading { margin-bottom: 8px; }
+.file-evidence .section-copy { margin: 0; }
+.file-evidence h3 { margin: 12px 0 6px; font-size: 12px; }
+.file-evidence ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; }
+.file-evidence li { overflow-wrap: anywhere; font-size: 12px; }
+.file-evidence code { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; background: #f7f8f7; font-size: 11px; }
+.file-evidence ul.muted li { color: var(--muted); }
+
 .research-note { margin: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 4px; overflow-x: auto; color: #34403b; background: #f7f8f7; font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .research-ran { border-left-color: var(--green); }
 .research-none, .research-unrecorded { border-left-color: var(--line); }

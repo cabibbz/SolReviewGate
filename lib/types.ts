@@ -83,6 +83,9 @@ export interface ReviewJob {
   reasoning?: string;
   codexVersion?: string;
   protocolVersion?: string;
+  /** Files whose contents the packet carried, counted once when the packet passed its checks. */
+  attachedFiles?: number;
+  attachedBytes?: number;
   /** Copied from the released candidate so the answered job shows what actually happened. */
   research?: boolean;
   searchCount?: number;

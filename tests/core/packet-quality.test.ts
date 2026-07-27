@@ -46,6 +46,26 @@ test("counts attached files and says when a packet asserts code without showing 
   assert.doesNotMatch(withFiles.issues.join(" "), /No file contents were attached/);
 });
 
+test("the analyzer names the attached paths, not only how many there were", () => {
+  const digest = "c".repeat(64);
+  const body = "## User Request\nS1 and S1 again, with enough text to clear the short packet threshold. " + "context ".repeat(120);
+  const quality = analyzePacketQuality([
+    body,
+    `=== BEGIN ATTACHED FILE DmaKit/overlay.cpp sha256:${digest} ===`,
+    "int main() { return 0; }",
+    "=== END ATTACHED FILE DmaKit/overlay.cpp ===",
+    `=== BEGIN ATTACHED FILE src/one.ts sha256:${digest} ===`,
+    "export const one = 1;",
+    "=== END ATTACHED FILE src/one.ts ===",
+  ].join("\n"));
+
+  assert.equal(quality.attachedFiles, 2);
+  assert.deepEqual(quality.attachedPaths, ["DmaKit/overlay.cpp", "src/one.ts"]);
+  assert.ok(quality.attachedBytes > 0);
+  // A packet with no attachments reports an empty list rather than a missing one.
+  assert.deepEqual(analyzePacketQuality(body).attachedPaths, []);
+});
+
 test("headings are matched by their words, not their markup", () => {
   // Each variant is a format a real assembling model has produced from the skill's section list.
   // The exact-match analyzer scored all of these zero and reported every section missing.

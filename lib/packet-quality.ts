@@ -22,6 +22,8 @@ export interface PacketQuality {
   sourceReferences: number;
   attachedFiles: number;
   attachedBytes: number;
+  /** The paths whose contents the reviewer could read, in packet order. */
+  attachedPaths: string[];
   issues: string[];
 }
 
@@ -76,6 +78,7 @@ export function analyzePacketQuality(packet: string): PacketQuality {
   return {
     attachedFiles: attachments.length,
     attachedBytes,
+    attachedPaths: attachments.map((match) => match[1].trim()).slice(0, 200),
     score: Math.max(0, Math.min(100, sectionPoints + sourcePoints + referencePoints)),
     bytes: Buffer.byteLength(packet, "utf8"),
     sectionsPresent: requiredSections.length - missing.length,
