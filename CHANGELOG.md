@@ -5,6 +5,7 @@
 ### Added
 
 * `update.ps1` and `update.sh`: one command that reads the saved address and token and reinstalls the client and both skills from `main`, so picking up a fix no longer means re-entering anything
+* `UpdateSolReview.cmd`, a double-click updater shipped as a standalone release asset and inside the Windows archive. It runs from Command Prompt, PowerShell, or Explorer, unlike the `irm` one-liner, which is a PowerShell command that Command Prompt does not have. The README now labels which window each form belongs in
 
 ### Fixed
 
