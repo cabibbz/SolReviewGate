@@ -34,6 +34,8 @@ export interface ReviewConfig {
   model: string;
   reasoning: ReasoningEffort;
   protocolId: string;
+  /** Lets the reviewer search the web for evidence the packet does not contain. */
+  research?: boolean;
 }
 
 export interface ReviewSettings extends ReviewConfig {
@@ -93,6 +95,7 @@ export function normalizeConfig(value: unknown): ReviewConfig {
     model: normalizeModel(record.model),
     reasoning: normalizeReasoning(record.reasoning),
     protocolId: normalizeProtocolId(record.protocolId),
+    research: record.research === true,
   };
 }
 
@@ -108,6 +111,7 @@ export function defaultReviewSettings(): ReviewSettings {
     model: safe(() => normalizeModel(config.model), builtInModels[0]),
     reasoning: safe(() => normalizeReasoning(config.reasoning), "medium"),
     protocolId: defaultProtocolId,
+    research: false,
     panel: [],
   };
 }
@@ -128,6 +132,7 @@ export async function getReviewSettings(store: Store = getStore()): Promise<Revi
     model: safe(() => normalizeModel(stored.model), defaults.model),
     reasoning: safe(() => normalizeReasoning(stored.reasoning), defaults.reasoning),
     protocolId: safe(() => normalizeProtocolId(stored.protocolId), defaults.protocolId),
+    research: stored.research === true,
     panel: safe(() => normalizePanel(stored.panel), defaults.panel),
   };
 }
@@ -138,6 +143,7 @@ export async function setReviewSettings(patch: Partial<ReviewSettings>, store: S
     model: patch.model === undefined ? current.model : normalizeModel(patch.model),
     reasoning: patch.reasoning === undefined ? current.reasoning : normalizeReasoning(patch.reasoning),
     protocolId: patch.protocolId === undefined ? current.protocolId : normalizeProtocolId(patch.protocolId),
+    research: patch.research === undefined ? current.research : patch.research === true,
     panel: patch.panel === undefined ? current.panel : normalizePanel(patch.panel),
   };
   await store.set(settingsKey, next, settingsTtlSeconds);
@@ -145,7 +151,12 @@ export async function setReviewSettings(patch: Partial<ReviewSettings>, store: S
 }
 
 export function activeConfig(settings: ReviewSettings): ReviewConfig {
-  return { model: settings.model, reasoning: settings.reasoning, protocolId: settings.protocolId };
+  return { model: settings.model, reasoning: settings.reasoning, protocolId: settings.protocolId, research: settings.research === true };
+}
+
+/** A researched run is a different experiment, so it never shares a fingerprint with a packet-only one. */
+export function recordedProtocolVersion(version: string, research?: boolean): string {
+  return research ? `${version}+research` : version;
 }
 
 /**

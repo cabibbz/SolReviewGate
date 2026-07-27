@@ -7,6 +7,7 @@ const model = process.env.SOL_MODEL || "gpt-5.6-sol";
 const reasoning = process.env.SOL_REASONING || "medium";
 const policy = Buffer.from(process.env.SOL_GATE_POLICY_BASE64 || "", "base64").toString("utf8");
 const outputSchema = /^\/opt\/solgate\/[a-z-]+\.json$/.test(process.env.SOL_OUTPUT_SCHEMA || "") ? process.env.SOL_OUTPUT_SCHEMA : "/opt/solgate/review-schema.json";
+const research = process.env.SOL_RESEARCH === "1";
 
 function redact(value, secrets) {
   let output = String(value || "");
@@ -49,7 +50,7 @@ const args = [
   "--strict-config", "--dangerously-bypass-hook-trust",
   "--model", model,
   "-c", `model_reasoning_effort=\"${reasoning}\"`,
-  "-c", "web_search=\"disabled\"",
+  "-c", `web_search="${research ? "enabled" : "disabled"}"`,
   "-c", "approval_policy=\"never\"",
   "--sandbox", "read-only",
   "--skip-git-repo-check",
@@ -79,7 +80,10 @@ child.stdout.on("data", async (chunk) => {
       const itemType = String(event.item?.type || "");
       const itemMessage = String(event.item?.message || "");
       if (itemType === "error" && itemMessage.includes("--dangerously-bypass-hook-trust")) continue;
-      if (/command|tool|web_search|mcp|file_change/i.test(`${eventType} ${itemType}`)) {
+      const activity = `${eventType} ${itemType}`;
+      // A researched run may search the web. Everything else still ends the run immediately.
+      const searching = research && /web_search|search/i.test(activity) && !/command|shell|exec|file_change|mcp|patch|apply/i.test(activity);
+      if (!searching && /command|tool|web_search|mcp|file_change/i.test(activity)) {
         toolAttempt = true;
         child.kill("SIGKILL");
       }

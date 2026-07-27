@@ -68,11 +68,14 @@ export function renderReview(review: InternalReview): string {
   const evidence = review.evidenceCited.length
     ? `\nEVIDENCE CITED:\n${review.evidenceCited.map((item) => `- ${item}`).join("\n")}`
     : "\nEVIDENCE CITED:\n- None";
+  const external = review.externalSources.length
+    ? `\nEXTERNAL SOURCES:\n${review.externalSources.map((item) => `- ${item}`).join("\n")}`
+    : "";
   const counterargument = review.counterargument ? `\nCOUNTERARGUMENT:\n${review.counterargument}` : "\nCOUNTERARGUMENT:\nNone identified.";
   const recommendations = review.recommendations.length
     ? `\nRECOMMENDATIONS:\n${review.recommendations.map((item) => `- ${item}`).join("\n")}`
     : "\nRECOMMENDATIONS:\n- None";
-  return `VERDICT: ${review.verdict}\nCONFIDENCE: ${review.confidence}\nASSESSMENT:\n${review.assessment}${evidence}${counterargument}${recommendations}`;
+  return `VERDICT: ${review.verdict}\nCONFIDENCE: ${review.confidence}\nASSESSMENT:\n${review.assessment}${evidence}${external}${counterargument}${recommendations}`;
 }
 
 
@@ -81,6 +84,7 @@ export interface RenderedReview {
   confidence: "LOW" | "MEDIUM" | "HIGH";
   assessment: string;
   evidenceCited: string[];
+  externalSources: string[];
   counterargument: string;
   recommendations: string[];
 }
@@ -103,15 +107,17 @@ function listItems(value: string): string[] {
 /** Reads a released review back into its parts so several of them can be combined. */
 export function parseRenderedReview(value: string): RenderedReview | null {
   const normalized = normalizeOutput(value);
-  const verdict = section(normalized, "VERDICT", ["CONFIDENCE", "ASSESSMENT", "EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
-  const confidence = section(normalized, "CONFIDENCE", ["ASSESSMENT", "EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
-  const assessment = section(normalized, "ASSESSMENT", ["EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const after = ["CONFIDENCE", "ASSESSMENT", "EVIDENCE CITED", "EXTERNAL SOURCES", "COUNTERARGUMENT", "RECOMMENDATIONS"];
+  const verdict = section(normalized, "VERDICT", after);
+  const confidence = section(normalized, "CONFIDENCE", after.slice(1));
+  const assessment = section(normalized, "ASSESSMENT", after.slice(2));
   if (!(verdict in verdictSeverity) || !(confidence in confidenceRank) || !assessment) return null;
   return {
     verdict: verdict as RenderedReview["verdict"],
     confidence: confidence as RenderedReview["confidence"],
     assessment,
-    evidenceCited: listItems(section(normalized, "EVIDENCE CITED", ["COUNTERARGUMENT", "RECOMMENDATIONS"])),
+    evidenceCited: listItems(section(normalized, "EVIDENCE CITED", ["EXTERNAL SOURCES", "COUNTERARGUMENT", "RECOMMENDATIONS"])),
+    externalSources: listItems(section(normalized, "EXTERNAL SOURCES", ["COUNTERARGUMENT", "RECOMMENDATIONS"])),
     counterargument: section(normalized, "COUNTERARGUMENT", ["RECOMMENDATIONS"]),
     recommendations: listItems(section(normalized, "RECOMMENDATIONS", [])),
   };
@@ -151,6 +157,7 @@ export function combineReviews(entries: { label: string; output: string }[]): st
 
   const assessments = parsed.map((entry) => `${entry.label} (${entry.review.verdict}, ${entry.review.confidence} confidence):\n${entry.review.assessment}`).join("\n\n");
   const evidence = attributed((review) => review.evidenceCited);
+  const external = attributed((review) => review.externalSources);
   const recommendations = attributed((review) => review.recommendations);
   const counterarguments = parsed.filter((entry) => entry.review.counterargument).map((entry) => `${entry.label}: ${entry.review.counterargument}`);
 
@@ -163,6 +170,7 @@ export function combineReviews(entries: { label: string; output: string }[]): st
     assessments,
     "\nEVIDENCE CITED:",
     evidence.length ? evidence.map(({ item, labels }) => `- ${item} (${labels.join(", ")})`).join("\n") : "- None",
+    ...(external.length ? ["\nEXTERNAL SOURCES:", external.map(({ item, labels }) => `- ${item} (${labels.join(", ")})`).join("\n")] : []),
     "\nCOUNTERARGUMENT:",
     counterarguments.length ? counterarguments.join("\n\n") : "None identified.",
     "\nRECOMMENDATIONS:",

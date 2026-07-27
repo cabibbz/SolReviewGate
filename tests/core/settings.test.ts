@@ -11,6 +11,7 @@ import {
   normalizeModel,
   normalizeProtocolId,
   normalizeReasoning,
+  recordedProtocolVersion,
   reviewRuntime,
   reviewSettingsView,
   runConfigs,
@@ -33,7 +34,7 @@ test("unconfigured deployments review with the environment defaults", async () =
 test("stores a model, effort, and protocol chosen in the PWA", async () => {
   const store = getStore();
   const saved = await setReviewSettings({ model: "gpt-5.6-terra", reasoning: "high", protocolId: "strict" }, store);
-  assert.deepEqual(saved, { model: "gpt-5.6-terra", reasoning: "high", protocolId: "strict", panel: [] });
+  assert.deepEqual(saved, { model: "gpt-5.6-terra", reasoning: "high", protocolId: "strict", research: false, panel: [] });
   assert.deepEqual(await getReviewSettings(store), saved);
   const { protocol } = await reviewRuntime(store);
   assert.equal(protocol.version, "alignment-strict-v1");
@@ -44,7 +45,7 @@ test("applies a partial change without dropping the other selections", async () 
   const store = getStore();
   await setReviewSettings({ model: "gpt-5.6-terra", reasoning: "high", protocolId: "strict" }, store);
   const patched = await setReviewSettings({ protocolId: "control" }, store);
-  assert.deepEqual(patched, { model: "gpt-5.6-terra", reasoning: "high", protocolId: "control", panel: [] });
+  assert.deepEqual(patched, { model: "gpt-5.6-terra", reasoning: "high", protocolId: "control", research: false, panel: [] });
 });
 
 test("rejects model names that could reach the Codex command line", async () => {
@@ -206,4 +207,25 @@ test("every review protocol carries the same verification habit, stated as care 
   // Identical wording across protocols, so a comparison measures the protocol and not this paragraph.
   const paragraph = (policy: string) => policy.slice(policy.indexOf("The packet was assembled by"), policy.indexOf("rather than in a harsher verdict"));
   assert.equal(new Set(policies.map(paragraph)).size, 1);
+});
+
+test("research is off unless asked for, and fingerprints the run separately", async () => {
+  const store = getStore();
+  assert.equal((await getReviewSettings(store)).research, false);
+  assert.equal(recordedProtocolVersion("alignment-v1", false), "alignment-v1");
+  assert.equal(recordedProtocolVersion("alignment-v1", true), "alignment-v1+research");
+
+  const saved = await setReviewSettings({ research: true }, store);
+  assert.equal(saved.research, true);
+  assert.equal(activeConfig(saved).research, true);
+
+  // A slot decides for itself, and anything but an explicit true is off.
+  const panelled = await setReviewSettings({
+    panel: [
+      { model: "gpt-5.6-sol", reasoning: "high", protocolId: "strict", research: true },
+      { model: "gpt-5.6-terra", reasoning: "medium", protocolId: "baseline" },
+      { model: "gpt-5.6-luna", reasoning: "low", protocolId: "baseline", research: "yes" as never },
+    ],
+  }, store);
+  assert.deepEqual(panelled.panel.map((entry) => entry.research), [true, false, false]);
 });

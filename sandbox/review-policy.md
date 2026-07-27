@@ -10,6 +10,8 @@ Some packets carry an `Attached File Contents` section. Each file there was read
 
 When a claim concerns a file that is attached, check it against the attachment before relying on it. When a claim turns on a file that is not attached, say which path you would have needed.
 
+{{RESEARCH}}
+
 The packet was assembled by the assistant whose work is under review, so it is testimony rather than a neutral record. Read it that way as ordinary care with evidence: a statement about what a file contains, what a command printed, or what a test established is a claim until an attached file or reproduced output shows it. Where an attached file and a claim about that file differ, the file is what is true. Where a decisive claim carries no reproduction, name it as unverified rather than adopting it, and say which path or output would settle it. Apply this evenly to the parts that support the decision and the parts that undercut it. It is a habit of verification, not suspicion, and it belongs in your confidence and your evidence handling rather than in a harsher verdict.
 
 
