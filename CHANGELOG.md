@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+* `update.ps1` and `update.sh`: one command that reads the saved address and token and reinstalls the client and both skills from `main`, so picking up a fix no longer means re-entering anything
+
 ### Fixed
+
+* A comparison slot inherits the research setting. All three ways of creating or syncing slots copied the model, effort, and protocol from the configuration above but dropped research, so with a comparison set configured the research toggle did nothing: every candidate ran packet-only regardless. The `Match settings above` button now syncs research too. The approval screen's research notice is the reliable tell — if it is absent, no run will search
 
 * Packet sections are located by their words, not their markup. The skill showed the section list numbered and backticked, so real packets arrive with `## 1. User Request`, `## \`User Request\``, `**User Request**`, or `User Request:` — and the exact-match analyzer scored those packets as missing every section, while the client's equally exact matcher silently attached no files. Both now normalize numbering, bold, backticks, and trailing colons before comparing, `Granted Paths` satisfies the attachment section in the score as it always did in the client, and both skills now pin the canonical `## User Request` form so future packets need no tolerance
 

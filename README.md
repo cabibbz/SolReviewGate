@@ -333,6 +333,20 @@ Use it to compare two independent attempts at the same problem: Claude's, which 
 
 Both skills come from the same installer. An installation made before `/solute` existed has only `/sol`; run the installer again to add it.
 
+## Update An Existing Installation
+
+One command, no prompts. It reads the address and token your installer already saved and reinstalls the client and both skills from the current `main`:
+
+```powershell
+irm 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/update.ps1' | iex
+```
+
+```sh
+sh -c "$(curl -fsSL 'https://raw.githubusercontent.com/cabibbz/SolReviewGate/main/update.sh')"
+```
+
+Restart Claude Code afterwards so the updated skills load. Updating the server is separate: deploy the repository to Vercel as usual.
+
 ## After Every Deploy
 
 Three checks, in order, about a minute total. Every bug this project has shipped that mattered was invisible to the mocked tests and obvious on the first real run.
