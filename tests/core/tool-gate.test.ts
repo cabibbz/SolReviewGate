@@ -84,6 +84,61 @@ test("the worker's guard agrees with the hook, tool for tool", () => {
   }
 });
 
+test("the hook records every call it sees, with the query", () => {
+  // The observation point moved here because a `webrun` call produces no item in the event stream:
+  // a run whose two calls were refused emitted only thread, turn, and message events. Counting
+  // searches from that stream reports zero on a run that searched perfectly.
+  const root = mkdtempSync(path.join(os.tmpdir(), "sol-hook-log-"));
+  const marker = path.join(root, "research-enabled");
+  const log = path.join(root, "calls.ndjson");
+  writeFileSync(marker, "1");
+  const script = path.join(root, "hook.py");
+  writeFileSync(script, hookSource
+    .replace('"/opt/solgate/research-enabled"', JSON.stringify(marker))
+    .replace('"/tmp/sol-tool-calls.ndjson"', JSON.stringify(log)));
+
+  try {
+    for (const payload of [
+      { tool_name: "webrun", tool_input: { query: "is gpt-5.4-mini still supported" } },
+      { tool_name: "webrun", tool_input: { query: "windows capture semantics" } },
+      { tool_name: "apply_patch", tool_input: { path: "src/one.ts" } },
+    ]) {
+      execFileSync("python3", [script], { input: JSON.stringify(payload), encoding: "utf8" });
+    }
+
+    const entries = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    assert.equal(entries.length, 3);
+    assert.deepEqual(entries.filter((entry) => entry.decision === "allow").map((entry) => entry.query), [
+      "is gpt-5.4-mini still supported",
+      "windows capture semantics",
+    ]);
+    const refused = entries.find((entry) => entry.decision === "deny");
+    assert.equal(refused.tool, "apply_patch");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a failure to record can never turn into a failure to gate", () => {
+  // Observation must not be able to break the decision, so the log path is deliberately unwritable.
+  const root = mkdtempSync(path.join(os.tmpdir(), "sol-hook-fail-"));
+  const marker = path.join(root, "research-enabled");
+  writeFileSync(marker, "1");
+  const script = path.join(root, "hook.py");
+  writeFileSync(script, hookSource
+    .replace('"/opt/solgate/research-enabled"', JSON.stringify(marker))
+    .replace('"/tmp/sol-tool-calls.ndjson"', JSON.stringify("/proc/nonexistent/calls.ndjson")));
+
+  try {
+    const allow = JSON.parse(execFileSync("python3", [script], { input: JSON.stringify({ tool_name: "webrun" }), encoding: "utf8" }));
+    assert.equal(allow.hookSpecificOutput.permissionDecision, "allow");
+    const deny = JSON.parse(execFileSync("python3", [script], { input: JSON.stringify({ tool_name: "shell" }), encoding: "utf8" }));
+    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("both gates carry the same rule, so neither can be relaxed alone", () => {
   const pattern = /READS_THE_WEB = re\.compile\(r"([^"]+)"/.exec(hookSource);
   assert.ok(pattern, "the hook no longer declares a read-family pattern");

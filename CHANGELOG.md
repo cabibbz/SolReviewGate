@@ -4,6 +4,9 @@
 
 ### Fixed
 
+* Searches are counted from the deny hook rather than the event stream. Codex emits no item for a web tool call: the run whose two `webrun` calls were refused produced only thread, turn, and message events, so the counter could report zero on a run that searched perfectly and always would have. The hook sees every call, records the tool, the decision, and the query, and the worker reads that record — errors while recording are swallowed so observation can never change the decision
+* A researched run that recorded no search now says whether any tool was refused, or states that the reviewer called no tool at all, which is itself the finding
+
 * Searches are no longer blocked by this project's own deny hook. Codex names its web tool `webrun`; the hook's allowlist knew `web_search`, `web_search_preview`, `browser_search`, and `search`, so it refused every search for the entire life of the feature — the production log reads `Tool call blocked by PreToolUse hook: Only web search is available in this review.. Tool: webrun`. The hook and the worker now decide by what a tool does: a researched run may use one that reads the web, and anything able to act is refused in both modes, whatever it is called
 * `docs/SECURITY.md` claimed `PreToolUse` never sees web search. The same log disproves it. Corrected, along with the note that hook coverage varies by Codex version and the worker remains the control that makes a review hermetic
 

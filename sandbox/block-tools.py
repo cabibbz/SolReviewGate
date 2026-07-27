@@ -36,6 +36,29 @@ for key in ("tool_name", "toolName", "name"):
         name = value.lower()
         break
 
+# Every tool call passes through here, and this is the only place proven to see one. Two `webrun`
+# calls in a production run produced no item at all in `codex exec --json`, so counting searches
+# from the event stream reports zero on a run that searched perfectly. The record is written here
+# instead. Observation must never be able to break the gate, so every failure is swallowed.
+CALL_LOG = "/tmp/sol-tool-calls.ndjson"
+
+
+def note_call(tool, decision, payload):
+    try:
+        supplied = payload.get("tool_input") or payload.get("toolInput") or {}
+        query = ""
+        if isinstance(supplied, dict):
+            for key in ("query", "q", "search", "search_query", "input", "prompt", "url"):
+                value = supplied.get(key)
+                if isinstance(value, str) and value.strip():
+                    query = value.strip()[:200]
+                    break
+        with open(CALL_LOG, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"tool": tool[:80], "decision": decision, "query": query}) + "\n")
+    except Exception:
+        pass
+
+
 researching = os.path.exists(RESEARCH_MARKER)
 allowed = researching and bool(READS_THE_WEB.search(name)) and not CAN_ACT.search(name)
 
@@ -47,6 +70,8 @@ elif researching:
     reason = f"This review permits web search only. Refused: {name or 'an unnamed tool'}."
 else:
     reason = f"No tools are available in this review process. Refused: {name or 'an unnamed tool'}."
+
+note_call(name, "allow" if allowed else "deny", payload)
 
 json.dump({
     "hookSpecificOutput": {

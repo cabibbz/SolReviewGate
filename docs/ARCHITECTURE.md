@@ -163,6 +163,18 @@ The first two are observations; the third is a claim. A packet-only run records 
 
 The trace is copied onto the job when a candidate is released, and a combined release sums the searches of every candidate it merged.
 
+## Search Observation
+
+Codex emits no item for a web tool call in `codex exec --json`. A production run whose two `webrun` calls were refused produced only thread, turn, and message events, so counting searches from the event stream reports zero on a run that searched perfectly. The record is taken from the deny hook instead, which is the one component every tool call passes through.
+
+| Recorded by the hook | Used for |
+| --- | --- |
+| Tool name | Naming a refusal without reading a provider log |
+| Decision | Separating a search that ran from one that was refused |
+| Query | The search text shown in the research trace |
+
+The hook writes one line per call and swallows every error while doing so, because observation must never be able to change the decision. The worker merges that record with anything the event stream happened to show, so a future Codex that does emit an item cannot cause double counting.
+
 ## Research Diagnosis
 
 A successful run keeps its candidate and discards its diagnostics, which is precisely the run where "research was on and nothing searched" needs explaining. When a researched run records no search, the tail of Codex's stderr is retained on the candidate and shown on the phone under the research trace. A deprecation notice, a rejected setting, or a provider message therefore reaches the operator instead of being inferred from silence.

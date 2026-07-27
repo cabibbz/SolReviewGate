@@ -64,6 +64,8 @@ interface WorkerEnvelope {
   blockedBy?: string;
   /** Which search mode the run actually used, so a fruitless search is attributable. */
   researchMode?: string;
+  /** Tools the deny hook refused, named, so a block is identified without a provider log. */
+  refusedTools?: string[];
 }
 
 const baseKey = "sol:sandbox:base";
@@ -165,6 +167,9 @@ function researchNote(envelope: WorkerEnvelope): string | undefined {
   const parts: string[] = [];
   if (envelope.blockedBy) parts.push(`The run was stopped by ${envelope.blockedBy}.`);
   if (envelope.researchMode) parts.push(`Search mode was "${envelope.researchMode}".`);
+  const refused = (envelope.refusedTools || []).filter((tool) => typeof tool === "string" && tool.trim());
+  if (refused.length) parts.push(`The sandbox refused these tools: ${refused.map((tool) => tool.slice(0, 60)).join(", ")}.`);
+  else parts.push("The reviewer called no tool at all, so nothing was refused and no search was attempted.");
   const items = (envelope.observedItems || []).filter((entry) => typeof entry === "string" && entry.trim());
   if (items.length) parts.push(`This run emitted: ${items.map((entry) => entry.slice(0, 60)).join(", ")}.`);
   const stderr = String(envelope.diagnostics || "").trim();

@@ -52,6 +52,28 @@ function recordSearch(event, fallback) {
   searchLog.push(String(query || fallback).slice(0, 200));
 }
 
+/**
+ * What the deny hook saw. A `webrun` call produces no item in `codex exec --json` -- a run where
+ * two of them were refused emitted only thread, turn, and message events -- so the event stream
+ * cannot count searches and never could. The hook sees every call, so it is the record.
+ */
+async function hookCalls() {
+  try {
+    const text = await readFile("/tmp/sol-tool-calls.ndjson", "utf8");
+    return text.split("\n").filter((line) => line.trim()).flatMap((line) => {
+      try {
+        const parsed = JSON.parse(line);
+        return typeof parsed?.tool === "string" ? [parsed] : [];
+      } catch {
+        return [];
+      }
+    });
+  } catch {
+    // No file means no tool was ever called, which is the ordinary case for a packet-only review.
+    return [];
+  }
+}
+
 const packet = await readFile(packetPath, "utf8");
 if (!policy || !packet.trim()) process.exit(31);
 const prompt = `${policy.trim()}\n\n=== BEGIN UNTRUSTED REVIEW PACKET ===\n${packet}\n=== END UNTRUSTED REVIEW PACKET ===\n`;
@@ -158,6 +180,18 @@ const exitCode = await new Promise((resolve) => {
 
 const redactedFinal = redact(finalText, secrets);
 await writeQueue;
+// The hook's record is authoritative for searches; anything the event stream happened to show is
+// merged in behind it, so a future Codex that does emit an item cannot cause double counting.
+const calls = await hookCalls();
+for (const call of calls) {
+  if (call.decision !== "allow") continue;
+  const entry = String(call.query || call.tool).slice(0, 200);
+  if (!seenSearches.has(entry) && searchLog.length < MAX_SEARCH_LOG) {
+    seenSearches.add(entry);
+    searchLog.push(entry);
+  }
+}
+const refusedTools = [...new Set(calls.filter((call) => call.decision !== "allow").map((call) => String(call.tool).slice(0, 60)))].slice(0, 10);
 const secretLeak = secrets.some((secret) => finalText.includes(secret));
 const envelope = {
   version: 1,
@@ -172,6 +206,8 @@ const envelope = {
   observedItems: [...observedItems].slice(0, 40),
   blockedBy,
   researchMode: research ? researchMode : "",
+  // Named so a refused tool is identified without reading a provider log.
+  refusedTools,
   // The queries leave this sandbox, so the operator sees exactly what left. Phone only, like the
   // rest of the candidate record.
   searchLog: searchLog.map((entry) => redact(entry, secrets)),
