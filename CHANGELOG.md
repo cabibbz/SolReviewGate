@@ -4,6 +4,11 @@
 
 ### Changed
 
+* `filesReferenced` is a required field on every review. The reviewer commits to a list of the attached paths it relied on, and the phone counts from that field instead of guessing from prose. A prompt-level ask to cite paths did not change what any real reviewer wrote; a required schema field does
+* A review that names a path that was not attached is rejected as `GATE_FABRICATED_PATH` before release. The reviewer can only claim to have read files it was actually given
+* The dashboard reads the count from the structured field, so a partial or shortened citation cannot be misread and a Bob-Regress fallback never has to be parsed. The prose fallback is gone
+
+
 * Every policy now requires an attached file to be cited by path. Checking an attachment was already required; naming it never was, so a finding about attached code could not be confirmed by the operator or acted on by the assistant. Where an attachment settles a question the reviewer quotes the line that settles it, and it may not assert anything about a file whose contents it did not read
 * A review that references none of its attachments is shown in amber rather than as a neutral note, because files sent and never used are files that did no work
 

@@ -228,6 +228,7 @@ assert.equal((await signedFetch(`/api/admin/jobs/${attachedJob.id}/decision`, { 
 assert.equal((await attachedClient.completed).code, 0);
 const attachedDone = await signedFetch(`/api/admin/jobs/${attachedJob.id}`);
 assert.equal(attachedDone.body.job.attachedFiles, 2, "the attachment count did not survive the answered job");
+assert.ok((attachedDone.body.result || "").includes("ATTACHED FILES USED:"), "released review lost the attached-files section on retention");
 // A packet with no attachments records none, so the two cases stay distinguishable.
 const plainDetail = await signedFetch(`/api/admin/jobs/${researchJob.id}`);
 assert.equal(plainDetail.body.job.attachedFiles, 0, "a packet with no attachments recorded some");

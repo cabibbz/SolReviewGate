@@ -10,6 +10,7 @@ export const gateOutcomeCodes = [
   "GATE_INVALID_SCHEMA",
   "GATE_EMPTY",
   "GATE_OVERSIZE",
+  "GATE_FABRICATED_PATH",
 ] as const;
 
 export type GateOutcomeCode = (typeof gateOutcomeCodes)[number];
@@ -71,11 +72,14 @@ export function renderReview(review: InternalReview): string {
   const external = review.externalSources.length
     ? `\nEXTERNAL SOURCES:\n${review.externalSources.map((item) => `- ${item}`).join("\n")}`
     : "";
+  const files = review.filesReferenced.length
+    ? `\nATTACHED FILES USED:\n${review.filesReferenced.map((item) => `- ${item}`).join("\n")}`
+    : "";
   const counterargument = review.counterargument ? `\nCOUNTERARGUMENT:\n${review.counterargument}` : "\nCOUNTERARGUMENT:\nNone identified.";
   const recommendations = review.recommendations.length
     ? `\nRECOMMENDATIONS:\n${review.recommendations.map((item) => `- ${item}`).join("\n")}`
     : "\nRECOMMENDATIONS:\n- None";
-  return `VERDICT: ${review.verdict}\nCONFIDENCE: ${review.confidence}\nASSESSMENT:\n${review.assessment}${evidence}${external}${counterargument}${recommendations}`;
+  return `VERDICT: ${review.verdict}\nCONFIDENCE: ${review.confidence}\nASSESSMENT:\n${review.assessment}${evidence}${external}${files}${counterargument}${recommendations}`;
 }
 
 
@@ -85,6 +89,7 @@ export interface RenderedReview {
   assessment: string;
   evidenceCited: string[];
   externalSources: string[];
+  filesReferenced: string[];
   counterargument: string;
   recommendations: string[];
 }
@@ -107,7 +112,7 @@ function listItems(value: string): string[] {
 /** Reads a released review back into its parts so several of them can be combined. */
 export function parseRenderedReview(value: string): RenderedReview | null {
   const normalized = normalizeOutput(value);
-  const after = ["CONFIDENCE", "ASSESSMENT", "EVIDENCE CITED", "EXTERNAL SOURCES", "COUNTERARGUMENT", "RECOMMENDATIONS"];
+  const after = ["CONFIDENCE", "ASSESSMENT", "EVIDENCE CITED", "EXTERNAL SOURCES", "ATTACHED FILES USED", "COUNTERARGUMENT", "RECOMMENDATIONS"];
   const verdict = section(normalized, "VERDICT", after);
   const confidence = section(normalized, "CONFIDENCE", after.slice(1));
   const assessment = section(normalized, "ASSESSMENT", after.slice(2));
@@ -116,8 +121,9 @@ export function parseRenderedReview(value: string): RenderedReview | null {
     verdict: verdict as RenderedReview["verdict"],
     confidence: confidence as RenderedReview["confidence"],
     assessment,
-    evidenceCited: listItems(section(normalized, "EVIDENCE CITED", ["EXTERNAL SOURCES", "COUNTERARGUMENT", "RECOMMENDATIONS"])),
-    externalSources: listItems(section(normalized, "EXTERNAL SOURCES", ["COUNTERARGUMENT", "RECOMMENDATIONS"])),
+    evidenceCited: listItems(section(normalized, "EVIDENCE CITED", ["EXTERNAL SOURCES", "ATTACHED FILES USED", "COUNTERARGUMENT", "RECOMMENDATIONS"])),
+    externalSources: listItems(section(normalized, "EXTERNAL SOURCES", ["ATTACHED FILES USED", "COUNTERARGUMENT", "RECOMMENDATIONS"])),
+    filesReferenced: listItems(section(normalized, "ATTACHED FILES USED", ["COUNTERARGUMENT", "RECOMMENDATIONS"])),
     counterargument: section(normalized, "COUNTERARGUMENT", ["RECOMMENDATIONS"]),
     recommendations: listItems(section(normalized, "RECOMMENDATIONS", [])),
   };
@@ -158,6 +164,7 @@ export function combineReviews(entries: { label: string; output: string }[]): st
   const assessments = parsed.map((entry) => `${entry.label} (${entry.review.verdict}, ${entry.review.confidence} confidence):\n${entry.review.assessment}`).join("\n\n");
   const evidence = attributed((review) => review.evidenceCited);
   const external = attributed((review) => review.externalSources);
+  const files = attributed((review) => review.filesReferenced);
   const recommendations = attributed((review) => review.recommendations);
   const counterarguments = parsed.filter((entry) => entry.review.counterargument).map((entry) => `${entry.label}: ${entry.review.counterargument}`);
 
@@ -171,6 +178,7 @@ export function combineReviews(entries: { label: string; output: string }[]): st
     "\nEVIDENCE CITED:",
     evidence.length ? evidence.map(({ item, labels }) => `- ${item} (${labels.join(", ")})`).join("\n") : "- None",
     ...(external.length ? ["\nEXTERNAL SOURCES:", external.map(({ item, labels }) => `- ${item} (${labels.join(", ")})`).join("\n")] : []),
+    ...(files.length ? ["\nATTACHED FILES USED:", files.map(({ item, labels }) => `- ${item} (${labels.join(", ")})`).join("\n")] : []),
     "\nCOUNTERARGUMENT:",
     counterarguments.length ? counterarguments.join("\n\n") : "None identified.",
     "\nRECOMMENDATIONS:",
@@ -178,7 +186,7 @@ export function combineReviews(entries: { label: string; output: string }[]): st
   ].join("\n");
 }
 
-export function analyzeInternalReview(raw: string, knownSecrets: string[] = []): GateAnalysis {
+export function analyzeInternalReview(raw: string, knownSecrets: string[] = [], attachedPaths: string[] = []): GateAnalysis {
   if (!raw) return { output: OPAQUE_OUTPUT, code: "GATE_EMPTY", released: false };
   if (Buffer.byteLength(raw, "utf8") > 4 * 1024 * 1024) return { output: OPAQUE_OUTPUT, code: "GATE_OVERSIZE", released: false };
   const normalized = normalizeOutput(raw);
@@ -189,6 +197,16 @@ export function analyzeInternalReview(raw: string, knownSecrets: string[] = []):
   try {
     const parsed = internalReviewSchema.parse(JSON.parse(normalized));
     if (parsed.kind === "opaque") return { output: OPAQUE_OUTPUT, code: "MODEL_WITHHELD", released: false };
+    // A path that was not attached is a fabrication. The check is generous: leading/trailing
+    // whitespace and a leading "./" are trimmed. It only runs when the packet actually carried an
+    // attachment list, so an older run that predates the field is not held to it retroactively.
+    if (attachedPaths.length) {
+      const attached = new Set(attachedPaths.map((path) => path.replace(/^\.\//, "").trim()).filter(Boolean));
+      const fabricated = parsed.filesReferenced
+        .map((path) => path.replace(/^\.\//, "").trim())
+        .find((path) => path && !attached.has(path));
+      if (fabricated) return { output: OPAQUE_OUTPUT, code: "GATE_FABRICATED_PATH", released: false };
+    }
     const rendered = renderReview(parsed);
     if (containsRefusalText(normalized) || containsRefusalText(rendered)) {
       return { output: OPAQUE_OUTPUT, code: "GATE_REFUSAL_LANGUAGE", released: false };

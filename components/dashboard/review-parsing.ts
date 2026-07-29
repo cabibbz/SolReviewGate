@@ -9,6 +9,7 @@ export interface ReadableResult {
   confidence?: string;
   evidence?: string[];
   externalSources?: string[];
+  filesReferenced?: string[];
   counterargument?: string;
 }
 
@@ -23,11 +24,12 @@ function resultSection(value: string, label: string, following: string[]): strin
 export function parseResult(value: string | null): ReadableResult | null {
   if (!value) return null;
   if (value.trim() === "Bob Regress") return { verdict: "Not released", assessment: "No substantive review was released.", recommendations: [], released: false };
-  const verdict = resultSection(value, "VERDICT", ["CONFIDENCE", "ASSESSMENT", "EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
-  const assessment = resultSection(value, "ASSESSMENT", ["EVIDENCE CITED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const verdict = resultSection(value, "VERDICT", ["CONFIDENCE", "ASSESSMENT", "EVIDENCE CITED", "EXTERNAL SOURCES", "ATTACHED FILES USED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const assessment = resultSection(value, "ASSESSMENT", ["EVIDENCE CITED", "EXTERNAL SOURCES", "ATTACHED FILES USED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
   if (!verdict || !assessment) return { verdict: "Review", assessment: readableValue(value), recommendations: [], released: true };
-  const evidence = resultSection(value, "EVIDENCE CITED", ["EXTERNAL SOURCES", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
-  const external = resultSection(value, "EXTERNAL SOURCES", ["COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const evidence = resultSection(value, "EVIDENCE CITED", ["EXTERNAL SOURCES", "ATTACHED FILES USED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const external = resultSection(value, "EXTERNAL SOURCES", ["ATTACHED FILES USED", "COUNTERARGUMENT", "RECOMMENDATIONS"]);
+  const filesRead = resultSection(value, "ATTACHED FILES USED", ["COUNTERARGUMENT", "RECOMMENDATIONS"]);
   const recommendations = resultSection(value, "RECOMMENDATIONS", []);
   const bullets = (text: string) => text.split("\n").map((item) => item.replace(/^\s*-\s*/, "").trim()).filter((item) => item && item !== "None");
   return {
@@ -36,6 +38,7 @@ export function parseResult(value: string | null): ReadableResult | null {
     assessment,
     evidence: bullets(evidence),
     externalSources: bullets(external),
+    filesReferenced: bullets(filesRead),
     counterargument: resultSection(value, "COUNTERARGUMENT", ["RECOMMENDATIONS"]),
     recommendations: bullets(recommendations),
     released: true,
@@ -54,6 +57,7 @@ export function parseCodexResponse(value: string | null): ReadableResult | null 
         assessment: readableValue(parsed.assessment) || "Codex returned a review without an assessment.",
         evidence: Array.isArray(parsed.evidenceCited) ? parsed.evidenceCited.map((item) => readableValue(item)).filter(Boolean) : [],
         externalSources: Array.isArray(parsed.externalSources) ? parsed.externalSources.map((item) => readableValue(item)).filter(Boolean) : [],
+        filesReferenced: Array.isArray(parsed.filesReferenced) ? parsed.filesReferenced.map((item) => readableValue(item)).filter(Boolean) : [],
         counterargument: readableValue(parsed.counterargument),
         recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.map((item) => readableValue(item)).filter(Boolean) : [],
         released: false,

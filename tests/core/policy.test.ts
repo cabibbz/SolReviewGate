@@ -92,3 +92,14 @@ test("every policy requires an attached file to be cited by path", async () => {
     }
   }
 });
+
+test("every policy names filesReferenced as the structured commitment the phone counts", async () => {
+  for (const name of await policyFiles()) {
+    const source = await readFile(path.join(policyDir, name), "utf8");
+    for (const research of [true, false]) {
+      const rendered = applyResearchNoteForTests(source, research);
+      assert.match(rendered, /`filesReferenced` is a required array/, `${name} does not describe the structured field`);
+      assert.match(rendered, /fabrication and rejects the review/, `${name} does not warn about fabricated paths`);
+    }
+  }
+});
