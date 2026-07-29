@@ -102,17 +102,23 @@ export interface FileEvidence {
  * many of those the review actually named. A path is counted as cited when the released text
  * mentions it, or mentions its file name where the full path would be unwieldy.
  */
-export function fileEvidence(attached: number, bytes: number, paths: string[] = [], reviewText = ""): FileEvidence {
-  const text = reviewText.toLowerCase();
+export function fileEvidence(attached: number, bytes: number, paths: string[] = [], referenced: readonly string[] = []): FileEvidence {
+  // The reviewer commits to a list of paths it relied on in `filesReferenced`. This function reads
+  // that commitment instead of guessing from prose: the previous heuristic missed a citation the
+  // reviewer wrote with a shortened form and could not distinguish a partial citation from none.
+  const attachedSet = new Set(paths.map((path) => String(path).replace(/^\.\//, "").trim()).filter(Boolean));
+  const seen = new Set<string>();
   const cited: string[] = [];
-  const uncited: string[] = [];
-  for (const raw of paths) {
-    const path = String(raw).trim();
-    if (!path) continue;
-    const base = path.split("/").pop() || path;
-    const named = text.includes(path.toLowerCase()) || (base.length >= 4 && text.includes(base.toLowerCase()));
-    (named ? cited : uncited).push(path);
+  for (const raw of referenced) {
+    const path = String(raw).replace(/^\.\//, "").trim();
+    if (!path || seen.has(path) || !attachedSet.has(path)) continue;
+    seen.add(path);
+    cited.push(path);
   }
+  const uncited = paths.filter((path) => {
+    const key = String(path).replace(/^\.\//, "").trim();
+    return key && !seen.has(key);
+  });
   const total = Math.max(attached, paths.length);
   return {
     attached: total,

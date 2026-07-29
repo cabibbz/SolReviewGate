@@ -4,6 +4,7 @@ import { Sandbox, Snapshot } from "@vercel/sandbox";
 import { config } from "@/lib/config";
 import { sha256 } from "@/lib/crypto";
 import { analyzeInternalReview, normalizeOutput, OPAQUE_OUTPUT } from "@/lib/gate";
+import { analyzePacketQuality } from "@/lib/packet-quality";
 import {
   adminGetJob,
   adminLiveLog,
@@ -646,10 +647,17 @@ async function finishMockCandidate(id: string, candidate: ReviewCandidate, store
   }
   const mode = process.env.SOL_MOCK_REVIEW_MODE || "review";
   const withheld = mode === "opaque" || candidate.protocolId === "control";
+  // The mock references the attached paths so the whole render + gate + trace pipeline is exercised
+  // end to end. A real reviewer commits to filesReferenced the same way.
+  let mockFiles: string[] = [];
+  if (!withheld && job) {
+    try { mockFiles = analyzePacketQuality(await readPacket(job, store)).attachedPaths.slice(0, 5); } catch { mockFiles = []; }
+  }
   const raw = withheld
     ? JSON.stringify({ kind: "opaque", verdict: "OPAQUE", assessment: "", recommendations: [], confidence: "LOW", evidenceCited: [], counterargument: "", withheldReason: "Mock review was withheld." })
-    : JSON.stringify({ kind: "review", verdict: "SOUND", assessment: `The decision is supported by the transferred evidence.${candidate.index > 1 ? ` Reviewed by ${candidate.model} under ${candidate.protocolVersion}.` : ""}`, recommendations: [], confidence: "HIGH", evidenceCited: ["S1"], externalSources: candidate.research ? ["https://example.invalid/fixture"] : [], counterargument: "The fixture does not exercise a real model.", withheldReason: "" });
-  const analysis = analyzeInternalReview(raw);
+    : JSON.stringify({ kind: "review", verdict: "SOUND", assessment: `The decision is supported by the transferred evidence.${candidate.index > 1 ? ` Reviewed by ${candidate.model} under ${candidate.protocolVersion}.` : ""}`, recommendations: [], confidence: "HIGH", evidenceCited: ["S1"], externalSources: candidate.research ? ["https://example.invalid/fixture"] : [], filesReferenced: mockFiles, counterargument: "The fixture does not exercise a real model.", withheldReason: "" });
+  const attachedPaths = job ? await readPacket(job, store).then((packet) => analyzePacketQuality(packet).attachedPaths).catch(() => [] as string[]) : [];
+  const analysis = analyzeInternalReview(raw, [], attachedPaths);
   await saveCandidateResult(id, candidate.id, {
     output: analysis.output,
     raw,
@@ -698,7 +706,13 @@ async function pollCandidate(id: string, candidate: ReviewCandidate, store: Stor
         researchNote: researchNote(envelope),
       }, store);
     } else {
-      const analysis = invalid ? null : analyzeInternalReview(envelope.candidate);
+      // The gate needs the packet's attached paths to reject a fabrication. Reading the packet once
+      // here is cheap next to Codex, and only used when the review has to be gated.
+      let attachedPaths: string[] = [];
+      if (!invalid && job) {
+        try { attachedPaths = analyzePacketQuality(await readPacket(job, store)).attachedPaths; } catch { /* packet aged out */ }
+      }
+      const analysis = invalid ? null : analyzeInternalReview(envelope.candidate, [], attachedPaths);
       await saveCandidateResult(id, candidate.id, {
         output: analysis?.output || OPAQUE_OUTPUT,
         raw: envelope.candidate || envelope.diagnostics,

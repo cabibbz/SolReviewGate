@@ -8,7 +8,7 @@ test("Codex output schema uses the strict flat-object subset", async () => {
   assert.equal(schema.additionalProperties, false);
   assert.equal("oneOf" in schema, false);
   assert.equal("anyOf" in schema, false);
-  assert.deepEqual(schema.required, ["kind", "verdict", "assessment", "recommendations", "confidence", "evidenceCited", "externalSources", "counterargument", "withheldReason"]);
+  assert.deepEqual(schema.required, ["kind", "verdict", "assessment", "recommendations", "confidence", "evidenceCited", "externalSources", "filesReferenced", "counterargument", "withheldReason"]);
   assert.deepEqual(Object.keys(schema.properties as object), schema.required);
 });
 

@@ -112,48 +112,34 @@ test("the worker counts a search once across its started and completed events", 
   assert.equal(searchLog.length, 50);
 });
 
-test("file evidence separates what was readable from what the review used", () => {
-  // Sol has no file access: files reach it only as attachments the client pasted into the packet.
-  // So "inspected" means readable, and the second number is how many of those it actually named.
+test("file evidence takes the reviewer's own list, not a guess from prose", () => {
+  // The reviewer commits to filesReferenced -- an array of attached paths it relied on. That
+  // structured commitment is what the phone counts, and a fabrication (a path that was not
+  // attached) is rejected by the gate before it reaches this function.
   const paths = ["DmaKit/overlay.cpp", "DmaKit/vdm.cpp", "src/untouched.ts"];
-  const review = "Attached `DmaKit/vdm.cpp` shows VDM patches a syscall, and overlay.cpp asserts capture as fact.";
 
-  const used = fileEvidence(3, 40_960, paths, review);
+  const used = fileEvidence(3, 40_960, paths, ["DmaKit/vdm.cpp", "DmaKit/overlay.cpp"]);
   assert.equal(used.attached, 3);
   assert.equal(used.cited, 2);
-  assert.deepEqual(used.citedPaths, ["DmaKit/overlay.cpp", "DmaKit/vdm.cpp"]);
+  assert.deepEqual(used.citedPaths.sort(), ["DmaKit/overlay.cpp", "DmaKit/vdm.cpp"]);
   assert.deepEqual(used.uncitedPaths, ["src/untouched.ts"]);
 
-  // A file named only by its base name still counts, since a review often writes overlay.cpp.
-  assert.equal(fileEvidence(1, 10, ["a/b/c/deep.ts"], "the bug is in deep.ts").cited, 1);
-  // A short base name is not matched loosely, so an incidental word cannot fake a citation.
-  assert.equal(fileEvidence(1, 10, ["src/a.ts"], "a is a common word").cited, 0);
+  // A path the reviewer names that is not in the attached list is ignored here, since the gate
+  // already rejects the review. Belt and suspenders, and the count stays honest.
+  assert.equal(fileEvidence(1, 10, ["a/b/c/deep.ts"], ["../elsewhere.ts"]).cited, 0);
+  // Duplicates in the reviewer's list do not double count.
+  assert.equal(fileEvidence(1, 10, ["one.ts"], ["one.ts", "one.ts"]).cited, 1);
+  // Leading ./ is normalised on both sides.
+  assert.equal(fileEvidence(1, 10, ["./one.ts"], ["one.ts"]).cited, 1);
 
-  // Nothing referenced is reported as nothing referenced rather than hidden.
-  const ignored = fileEvidence(2, 100, ["one.ts", "two.ts"], "a review that names no path");
+  const ignored = fileEvidence(2, 100, ["one.ts", "two.ts"], []);
   assert.equal(ignored.cited, 0);
   assert.equal(ignored.uncitedPaths.length, 2);
 
-  // A count without paths still reports the count: the packet may have expired out of retention.
-  assert.equal(fileEvidence(7, 2_048, [], "").attached, 7);
-  // No attachments at all stays zero, so the card never renders on a packet that carried none.
-  assert.equal(fileEvidence(0, 0, [], "").attached, 0);
-
-  // The level drives how loudly the card reads. Sending files a review never touches is the case
-  // that needs to look like a problem, because the attachments then did no work at all.
-  assert.equal(fileEvidence(0, 0, [], "").level, "none");
+  assert.equal(fileEvidence(7, 2_048, [], []).attached, 7);
+  assert.equal(fileEvidence(0, 0, [], []).attached, 0);
+  assert.equal(fileEvidence(0, 0, [], []).level, "none");
   assert.equal(used.level, "partial");
   assert.equal(ignored.level, "unused");
-  assert.equal(fileEvidence(2, 10, ["one.ts", "two.ts"], "one.ts and two.ts both matter").level, "used");
-});
-
-test("a withheld candidate is matched against what the reviewer wrote, not the terminal response", () => {
-  // A candidate that was not released carries the fixed terminal response, so matching only the
-  // released text could find nothing however thoroughly the reviewer cited the attachments.
-  const paths = ["DmaKit/driver_wdt.cpp", "DmaKit/physical.h"];
-  const released = "Bob Regress";
-  const reviewerWrote = 'The contract in `DmaKit/driver_wdt.cpp` does not match physical.h.';
-
-  assert.equal(fileEvidence(2, 100, paths, released).cited, 0);
-  assert.equal(fileEvidence(2, 100, paths, `${released}\n${reviewerWrote}`).cited, 2);
+  assert.equal(fileEvidence(2, 10, ["one.ts", "two.ts"], ["one.ts", "two.ts"]).level, "used");
 });

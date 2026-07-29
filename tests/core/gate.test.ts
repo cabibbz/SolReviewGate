@@ -92,3 +92,32 @@ test("agreement is reported plainly and a single review is never a combination",
   assert.equal(combineReviews([{ label: "a", output: one }]), null);
   assert.equal(combineReviews([{ label: "a", output: "Bob Regress" }, { label: "b", output: two }]), null);
 });
+
+test("a review that names an unattached path is refused as a fabrication", () => {
+  // The reviewer commits to filesReferenced. A path there that was not among the attachments is a
+  // claim about code nobody sent, and it must not release. Belt: the phone's counting also ignores
+  // anything not in the attached list. Braces: the release gate refuses it outright.
+  const raw = JSON.stringify({
+    kind: "review",
+    verdict: "SOUND",
+    assessment: "Every attachment supports the decision.",
+    recommendations: [],
+    confidence: "HIGH",
+    evidenceCited: ["S1"],
+    externalSources: [],
+    filesReferenced: ["src/one.ts", "src/never-attached.ts"],
+    counterargument: "",
+    withheldReason: "",
+  });
+
+  // Attachments name only one of the two paths, so the second is a fabrication.
+  const analysis = analyzeInternalReview(raw, [], ["src/one.ts"]);
+  assert.equal(analysis.released, false);
+  assert.equal(analysis.code, "GATE_FABRICATED_PATH");
+
+  // With no attachments recorded the check does not run: an older packet cannot be judged this way.
+  assert.equal(analyzeInternalReview(raw, [], []).released, true);
+  // Leading "./" on either side is fine and does not count as fabrication.
+  const withDot = JSON.parse(raw); withDot.filesReferenced = ["./src/one.ts"];
+  assert.equal(analyzeInternalReview(JSON.stringify(withDot), [], ["src/one.ts"]).released, true);
+});

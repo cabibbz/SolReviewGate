@@ -143,6 +143,8 @@ export const internalReviewSchema = z.discriminatedUnion("kind", [
     evidenceCited: z.array(z.string().min(1).max(100)).max(100).default([]),
     /** Sources the reviewer looked up itself, each naming what it supports. Empty unless research ran. */
     externalSources: z.array(z.string().min(1).max(2_000)).max(40).default([]),
+    /** Attached paths the reviewer relied on. A structured commitment, so the count isn't guessed from prose. */
+    filesReferenced: z.array(z.string().min(1).max(500)).max(500).default([]),
     counterargument: z.string().max(16_000).default(""),
     withheldReason: z.literal("").default(""),
   }),
@@ -154,6 +156,7 @@ export const internalReviewSchema = z.discriminatedUnion("kind", [
     confidence: z.literal("LOW").default("LOW"),
     evidenceCited: z.array(z.string()).max(0).default([]),
     externalSources: z.array(z.string()).max(0).default([]),
+    filesReferenced: z.array(z.string()).max(0).default([]),
     counterargument: z.literal("").default(""),
     withheldReason: z.string().min(1).max(16_000).default("No operator explanation was provided."),
   }),

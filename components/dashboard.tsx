@@ -528,13 +528,19 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   const shownRaw = viewingCandidate ? candidateDetail?.raw ?? null : detail?.raw ?? null;
   const shownLive = viewingCandidate ? candidateDetail?.live ?? null : detail?.live ?? null;
   const readableResult = parseResult(shownResult);
-  // Matched against what the reviewer wrote, not only what was released. A withheld or unselected
-  // candidate releases the fixed terminal response, and matching that could only ever find nothing.
+  // Taken from the reviewer's own structured commitment (`filesReferenced`), so a partial or
+  // shortened citation cannot be misread. If neither surface has it (older reviews, or a withheld
+  // candidate), the raw JSON is the fallback so the count still comes from a field rather than a
+  // guess. A path the reviewer names that was not attached is rejected earlier by the gate.
+  let referenced: string[] = readableResult?.filesReferenced || [];
+  if (!referenced.length && shownRaw) {
+    try { referenced = (JSON.parse(shownRaw) as { filesReferenced?: unknown }).filesReferenced as string[] || []; } catch { referenced = []; }
+  }
   const files = fileEvidence(
     detail?.job.attachedFiles || 0,
     detail?.job.attachedBytes || 0,
     detail?.packetQuality?.attachedPaths || [],
-    `${shownResult || ""}\n${shownRaw || ""}`,
+    Array.isArray(referenced) ? referenced : [],
   );
   const parallelJob = detail?.job.kind === "parallel";
   const privateCodexResponse = !parallelJob && (shownResult === "Bob Regress" || (viewingCandidate && viewedCandidate?.releasable === false))
