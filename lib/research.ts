@@ -92,6 +92,8 @@ export interface FileEvidence {
   cited: number;
   citedPaths: string[];
   uncitedPaths: string[];
+  /** `unused` is the case worth seeing: files were sent and the review grounded itself in none. */
+  level: "none" | "used" | "partial" | "unused";
 }
 
 /**
@@ -111,11 +113,13 @@ export function fileEvidence(attached: number, bytes: number, paths: string[] = 
     const named = text.includes(path.toLowerCase()) || (base.length >= 4 && text.includes(base.toLowerCase()));
     (named ? cited : uncited).push(path);
   }
+  const total = Math.max(attached, paths.length);
   return {
-    attached: Math.max(attached, paths.length),
+    attached: total,
     bytes: Math.max(0, bytes),
     cited: cited.length,
     citedPaths: cited,
     uncitedPaths: uncited,
+    level: !total ? "none" : cited.length === 0 ? "unused" : cited.length === total ? "used" : "partial",
   };
 }

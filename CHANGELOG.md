@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed
+
+* Every policy now requires an attached file to be cited by path. Checking an attachment was already required; naming it never was, so a finding about attached code could not be confirmed by the operator or acted on by the assistant. Where an attachment settles a question the reviewer quotes the line that settles it, and it may not assert anything about a file whose contents it did not read
+* A review that references none of its attachments is shown in amber rather than as a neutral note, because files sent and never used are files that did no work
+
+### Fixed
+
+* File references are matched against what the reviewer wrote, not only what was released. A withheld or unselected candidate releases the fixed terminal response, so the previous form could find nothing however thoroughly the reviewer had cited the attachments
+
 ### Added
 
 * Every run reports how many files it could read and how many of those the review actually referenced. The count is taken once when the packet passes its integrity checks and stored on the job, so history and the answered review report it without decrypting a packet again. History rows carry it, the run fact table shows `Files read`, and the result view lists the referenced paths separately from the attached-but-never-mentioned ones — an attachment nothing refers to did no work, and that gap is the number worth seeing
