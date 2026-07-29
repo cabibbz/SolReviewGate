@@ -138,4 +138,22 @@ test("file evidence separates what was readable from what the review used", () =
   assert.equal(fileEvidence(7, 2_048, [], "").attached, 7);
   // No attachments at all stays zero, so the card never renders on a packet that carried none.
   assert.equal(fileEvidence(0, 0, [], "").attached, 0);
+
+  // The level drives how loudly the card reads. Sending files a review never touches is the case
+  // that needs to look like a problem, because the attachments then did no work at all.
+  assert.equal(fileEvidence(0, 0, [], "").level, "none");
+  assert.equal(used.level, "partial");
+  assert.equal(ignored.level, "unused");
+  assert.equal(fileEvidence(2, 10, ["one.ts", "two.ts"], "one.ts and two.ts both matter").level, "used");
+});
+
+test("a withheld candidate is matched against what the reviewer wrote, not the terminal response", () => {
+  // A candidate that was not released carries the fixed terminal response, so matching only the
+  // released text could find nothing however thoroughly the reviewer cited the attachments.
+  const paths = ["DmaKit/driver_wdt.cpp", "DmaKit/physical.h"];
+  const released = "Bob Regress";
+  const reviewerWrote = 'The contract in `DmaKit/driver_wdt.cpp` does not match physical.h.';
+
+  assert.equal(fileEvidence(2, 100, paths, released).cited, 0);
+  assert.equal(fileEvidence(2, 100, paths, `${released}\n${reviewerWrote}`).cited, 2);
 });

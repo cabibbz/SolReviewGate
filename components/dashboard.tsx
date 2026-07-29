@@ -60,8 +60,8 @@ function FileEvidenceCard({ files }: { files: FileEvidence }) {
     ? "Every attached file is referenced in the review."
     : files.cited > 0
       ? `${files.cited} of ${files.attached} are referenced in the review. The rest were readable but never mentioned.`
-      : "None are referenced in the review, so the reviewer either did not need them or did not use them.";
-  return <section className="file-evidence">
+      : `None of the ${files.attached} are referenced anywhere in the review, so the review is not grounded in the code you sent. Either those files do not bear on the decision, or the reviewer did not use them.`;
+  return <section className={`file-evidence file-${files.level}`}>
     <div className="content-heading secondary"><span>Files</span><code>{files.attached} attached, {formatBytes(files.bytes)}</code></div>
     <p className="section-copy">{named}</p>
     {files.citedPaths.length > 0 && <><h3>Referenced</h3><ul>{files.citedPaths.map((file) => <li key={file}><code>{file}</code></li>)}</ul></>}
@@ -528,11 +528,13 @@ export function Dashboard({ initialView }: { initialView: "home" | "reviews" | "
   const shownRaw = viewingCandidate ? candidateDetail?.raw ?? null : detail?.raw ?? null;
   const shownLive = viewingCandidate ? candidateDetail?.live ?? null : detail?.live ?? null;
   const readableResult = parseResult(shownResult);
+  // Matched against what the reviewer wrote, not only what was released. A withheld or unselected
+  // candidate releases the fixed terminal response, and matching that could only ever find nothing.
   const files = fileEvidence(
     detail?.job.attachedFiles || 0,
     detail?.job.attachedBytes || 0,
     detail?.packetQuality?.attachedPaths || [],
-    shownResult || "",
+    `${shownResult || ""}\n${shownRaw || ""}`,
   );
   const parallelJob = detail?.job.kind === "parallel";
   const privateCodexResponse = !parallelJob && (shownResult === "Bob Regress" || (viewingCandidate && viewedCandidate?.releasable === false))

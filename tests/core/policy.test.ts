@@ -77,3 +77,18 @@ test("the two modes produce different policy text, so they are never pooled", as
     assert.notEqual(applyResearchNoteForTests(source, true), applyResearchNoteForTests(source, false), `${name} is identical in both modes`);
   }
 });
+
+test("every policy requires an attached file to be cited by path", async () => {
+  // Eighteen files were attached to one packet and the review referenced none of them. Checking an
+  // attachment was required; naming it never was, so a finding about attached code could not be
+  // confirmed by the operator or acted on by the assistant.
+  for (const name of await policyFiles()) {
+    const source = await readFile(path.join(policyDir, name), "utf8");
+    for (const research of [true, false]) {
+      const rendered = applyResearchNoteForTests(source, research);
+      assert.match(rendered, /Cite the path whenever/, `${name} never asks for the path`);
+      assert.match(rendered, /quote the line that settles it/, `${name} does not ask for the settling line`);
+      assert.match(rendered, /never assert anything about a file whose contents you did not read/i, `${name} allows a claim about an unread file`);
+    }
+  }
+});
